@@ -1,0 +1,11 @@
+# The sources are checked in with LF endings. Forcing LF on checkout keeps the
+# test suite byte-reproducible across platforms: a CRLF checkout does not break
+# `test/encoding.cjs` (it checks UTF-8 validity, not line endings) but it does
+# churn every file in a diff.
+* text=auto eol=lf
+
+# Binary-ish assets must never be line-ending translated.
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary

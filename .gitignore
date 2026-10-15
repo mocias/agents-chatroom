@@ -1,0 +1,20 @@
+# Runtime state. The plugin creates these beside its rooms directory, which for
+# a standalone probe run is inside the package unless the data dir is
+# overridden. Never source; see README "在线测试" for where they normally live.
+.rooms/
+.agent-room-rooms/
+agent-room-rooms/
+agent-room-files/
+agent-room-theme/
+agent-room-workspace/
+
+node_modules/
+pnpm-lock.yaml
+
+# Playwright CLI writes snapshots and console logs to the directory it is
+# invoked from.
+.playwright-cli/
+
+*.log
+.DS_Store
+Thumbs.db

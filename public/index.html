@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Room</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0f1117;
+      }
+      #room {
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="room"></div>
+    <script src="./app.js"></script>
+    <script>
+      const params = new URLSearchParams(location.search);
+      window.__room = window.AgentRoomUI.mount(document.getElementById('room'), {
+        base: '',
+        room: params.get('room') || 'default',
+      });
+    </script>
+  </body>
+</html>
