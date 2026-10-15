@@ -17,29 +17,29 @@
         # idleRoomTtlMs: 1800000
         # maxRooms: 16
         # R2: one fixed working directory PER HARNESS, not per room. Every codex
-        # member of every room works in the first path; every ACP member in the
-        # second. Sessions are pinned to their directory at creation and cannot
+        # member of every room works in the first path; every Qoder member in the
+        # third. Sessions are pinned to their directory at creation and cannot
         # be moved afterwards (ACP has no session/set_cwd, and codex fixes cwd at
         # thread/start), so changing a value here only takes effect for members
         # whose session is opened afterwards.
         #
-        # Both directories are created at load time if missing — ACP's
+        # Every directory is created at load time if missing — ACP's
         # `session/new {cwd}` rejects a path that does not exist.
         #
         # Omitted here on purpose: the default is
-        #   <profile>/agent-room-workspace/{codex,acp}
-        # which is what most installs want, and a literal path would have to
-        # name one machine's home directory. Uncomment and edit to point `codex`
-        # at a folder you made in Codex itself, if you want these conversations
-        # to land under that project.
+        #   <profile>/agent-room-workspace/<harness>
+        # for every harness this build knows, which is what most installs want, and
+        # a literal path would have to name one machine's home directory.
+        # Uncomment and edit to point `codex` at a folder you made in Codex
+        # itself, if you want these conversations to land under that project.
         # workspaceDirs:
         #   codex: 'C:\Users\you\.dsh\profiles\desktop\agent-room-workspace\codex'
-        #   acp: 'C:\Users\you\.dsh\profiles\desktop\agent-room-workspace\acp'
+        #   qoder: 'C:\Users\you\.dsh\profiles\desktop\agent-room-workspace\qoder'
         # Grouping INSIDE each harness, on top of the directory above. Every room
-        # files its codex threads into this one codex project, and its ACP
-        # sessions into one DSH workspace at the `acp` path — so the harness's own
+        # files its codex threads into this one codex project, and its DSH
+        # sessions into one DSH workspace at the `dsh` path — so the harness's own
         # GUI shows one workspace holding every conversation this plugin ever had
-        # with it. ACP's side needs no key: it is always the `acp` directory.
+        # with it. DSH's side needs no key: it is always the `dsh` directory.
         #
         # codex has no "add a thread to a project" API, so growing the group
         # rotates it (import the union under a fresh idempotency key, delete the
@@ -67,20 +67,28 @@
         # Roster edits made in the UI are saved here and survive a restart.
         # Defaults to $DSH_PROFILE_DIR/agent-room-rooms when omitted.
         # roomsDir: ''
-        # The built-in backend is the codex app-server, which needs no entry
-        # here. Other backends are described under `backends` and spawned lazily
-        # — an entry costs nothing until a member actually names it, but it does
-        # make that backend appear in the add-member dropdown, which is what
-        # makes it reachable at all.
+        # The built-in backend is the codex app-server, which needs no entry here.
+        # Every other harness this build knows (DSH, Qoder) is also auto-detected:
+        # if its binary is on PATH, or — for DSH — this very process is a desktop
+        # install with the `acp` profile, then the harness is launched with the
+        # right arguments and needs no entry either. Use `backends` only to
+        # OVERRIDE that, e.g. to point a harness at a wrapper script or to add a
+        # harness this build has never heard of.
         #
-        # A worked example (DeepSeek Harness joining its own room as a
-        # teammate) is in the README, section "把 DeepSeek Harness 自己接进来".
-        # It is commented out here because `agentCommand` names an absolute
-        # path that only exists on the machine it was written on.
+        # An entry costs nothing until a member actually names it. Which harnesses
+        # the add-member dropdown OFFERS is a separate, user-visible setting:
+        # 设置 → 通用 → "Agent 群聊可用后端" (stored in the profile beside the
+        # rooms). Detection fills that list automatically until the user ticks
+        # anything, after which their choice is kept.
+        #
+        # What each harness would actually be launched with is only ever read-only
+        # information here — a harness that is not detected contributes nothing and
+        # the pool reports "no ACP agent configured".
+        #
         # backends:
-        #   acp:
-        #     agentCommand: '/absolute/path/to/the/acp/agent'
-        #     agentArgs: ['--experimental-acp']
+        #   qoder:
+        #     agentCommand: 'C:\Users\you\AppData\Local\Programs\Qoder\qoder.exe'
+        #     agentArgs: ['--acp']
         #
         # A member is NOT declared here on purpose: declaring `members` would
         # pin every room's roster, and the roster edited in the UI is what the

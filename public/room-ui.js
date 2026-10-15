@@ -301,7 +301,7 @@
     let roomList = [];
     // Last `/models` read: which backends exist and what each one offers.
     // Needed before the roster can be edited (the add form is built from it).
-    let catalog = { models: [], backends: [] };
+    let catalog = { models: [], backends: [], harnesses: [] };
     let live = new Map();
     let showTools = false;
     let sending = false;
@@ -656,7 +656,14 @@
       for (const backend of backends) {
         const option = doc.createElement('option');
         option.value = backend;
-        option.textContent = backend === 'codex' ? 'codex（本机 codex 会话）' : backend;
+        // The label comes from the server's registry, so a harness is named
+        // once — in `harnesses.cjs` — rather than in a second table here that
+        // would drift the moment a harness is added. `detail` carries why an
+        // offered-but-undetected harness is worth warning about.
+        const row = (catalog.harnesses || []).find((entry) => entry.id === backend) || null;
+        option.textContent = row ? row.label : backend;
+        if (row && row.forced) option.textContent = `${row.label}（未检测到）`;
+        if (row && row.detail) option.title = row.detail;
         backendEl.appendChild(option);
       }
       backendEl.value = backends.includes(previous) ? previous : backends[0];
@@ -679,14 +686,22 @@
       el('add-hint').textContent =
         backends.length > 1
           ? '同一个房间可以混装不同后端的群友：@ 是公开强调，所有人都能看到并旁听。'
-          : '当前只有 codex 后端。加一个群友 = 再加一个独立会话，可以配不同模型与人设。';
+          : `当前后端只有 ${backends[0] || 'codex'}。加一个群友 = 再加一个独立会话，可以配不同模型与人设；更多后端可在 设置 → 通用 中开启。`;
     }
 
     async function loadCatalog() {
       try {
         const response = await fetch(`${base}/models?room=${encodeURIComponent(roomId)}`, { credentials: 'same-origin' });
         if (!response.ok) return;
-        catalog = await response.json();
+        const payload = await response.json();
+        // Merge rather than replace: `/state` and `/models` each carry a piece of
+        // this, and a response that happens to omit a field must not blank a
+        // section the other one already filled in.
+        catalog = {
+          ...catalog,
+          ...payload,
+          harnesses: Array.isArray(payload.harnesses) && payload.harnesses.length ? payload.harnesses : catalog.harnesses,
+        };
         refreshAddForm();
       } catch {}
     }
@@ -946,6 +961,10 @@
         if (mine !== generation) return;
         presets = Array.isArray(payload.themePresets) ? payload.themePresets : presets;
         if (payload.uploads && typeof payload.uploads === 'object') uploads = payload.uploads;
+        // The harness rows ride along with the state so the add-member form can
+        // name and describe its options on the very first paint, instead of
+        // showing bare ids until `/models` comes back.
+        if (Array.isArray(payload.harnesses)) catalog.harnesses = payload.harnesses;
         applyUploads();
         // The theme arrives with the state so the first frame is already painted
         // in the user's colours — fetching it separately would flash the default
@@ -953,6 +972,9 @@
         applyTheme(payload.theme || null);
         renderThemePanel();
         applySnapshot(payload.snapshot);
+        // The harness rows arrived with this state; repaint the form so the
+        // dropdown is named from the registry even if `/models` is slow or fails.
+        refreshAddForm();
       } catch (error) {
         if (mine !== generation) return;
         el('status').textContent = '无法连接房间服务';

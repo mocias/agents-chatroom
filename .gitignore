@@ -11,6 +11,13 @@ agent-room-workspace/
 node_modules/
 pnpm-lock.yaml
 
+# Development-only material, deliberately not part of the published plugin.
+# The tests are kept on disk so they stay runnable (`node test/run-all.cjs`),
+# but they are not published: this repo ships the plugin, not its test suite.
+# `_research/` holds investigation notes and one-off probes.
+test/
+_research/
+
 # Playwright CLI writes snapshots and console logs to the directory it is
 # invoked from.
 .playwright-cli/
