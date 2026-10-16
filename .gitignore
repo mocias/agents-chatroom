@@ -9,6 +9,7 @@ agent-room-theme/
 agent-room-workspace/
 
 node_modules/
+agents/
 .agent-room-data/
 output/
 dist/
@@ -28,3 +29,5 @@ _research/
 *.log
 .DS_Store
 Thumbs.db
+
+.agent-room-location.json

@@ -1,5 +1,16 @@
 # Windows 桌面版验收 · 2026-10-16
 
+## 0.1.8 工作区、删除与原生归档边界
+
+- 最终回归 26/26 通过，包含删除确认、共用/祖先路径保护、模型与角色指令隔离。
+- 最终打包桌面验收 `output/desktop-smoke-exb3Jx/report.json` 通过；实际交互覆盖取消删除、保留目录、确认完整路径后删除、重启恢复。原生文件选择器仍用模拟返回值。
+- 无工作区环境变量覆盖的打包程序默认根目录验证：`output/default-root-tDy4F6/report.json`，确认为 EXE 同级 `agents/`。已有 Agent 不搬目录。
+- 安装器清理宏隔离执行：`output/installer-preserve-lRIIFE/report.json`，应用文件删除而 `agents/` 保留。实际执行的是同一 NSIS 宏的无注册表测试程序，不是覆盖用户已安装版本或完整卸载验收。
+- Codex：`output/native-codex-vN7bjq/report.json`，同一 Agent 项目下两段独立会话均回复 SYNC_OK，并读回 projectId。当前桌面 read_thread 能读回验证对话；list_projects 未显示新项目，GUI 自动项目同步仍未完成。成员菜单提供 `codex://threads/<id>` 打开入口；该系统协议的用户点击跳转未纳入自动 UI 验收。
+- DSH/Qoder：`output/persona-live-J3wtcF/report.json`，实际回复 DSH_PERSONA_OK / QODER_PERSONA_OK，验证首次 ACP prompt 已接入身份和角色设定。0.1.7 的 ACP 实现曾遗漏这些指令。
+- DSH 的 workspaceRegistry 和 Qoder 的桌面项目/消息库尚未对接；界面明确标记未支持，不将 ACP 聊天成功视为原桌面可见。
+- 浏览器服务已更新，默认工作区根为源码目录/agents。安装包 `dist/Agent-Room-Setup-0.1.8-x64.exe` 已构建；用户原已安装版本未覆盖。
+
 ## 0.1.7 扫描前告知与手动配置
 
 - 首次使用（含升级后的旧数据）未作选择前不自动发现；弹窗说明读取范围，提供允许扫描与不扫描手动配置。选择按数据目录保存。
@@ -88,3 +99,11 @@ Electron 44.7.2 / electron-builder 26.15.3，Windows x64 NSIS 安装向导。运
 构建依赖审计报告 7 项 moderate，来自 electron-builder 的下载/日志工具间接依赖；未执行破坏性的自动降级修复。它们不包含在已核对的运行安装包中。
 
 桌面运行数据默认为 `%APPDATA%\Agent Room\data`，不写入安装目录。测试使用单独的 `AGENT_ROOM_DESKTOP_HOME`，未改动浏览器版已有数据。
+
+2026-10-16 新界面验证：output/desktop-smoke-4mkvqt/report.json，12 项通过。新增右键置顶/取消置顶、Escape 关闭、重启持久化、直接编辑工作区并保留旧文件；既有模型读取、推理设置及删除确认也通过。npm test 28/28。已重新生成 0.1.8 安装包，未覆盖用户安装。
+
+2026-10-16：29/29 回归通过；最终安装包对应的桌面程序通过 scripts/check-composer-ui.cjs，报告 output/composer-ui-3RNEFD/report.json。验证独立滚动、@ 输入候选筛选/键鼠选择/取消、Agent 与群聊重命名及名称更新。使用隔离的 30 联系人和 80 条模拟历史，不代表真实模型调用测试。
+
+2026-10-16 数据目录：32/32 回归通过，包含手动迁移后的附件路径。打包桌面检查 output/data-location-ui-1Q2MWm/report.json：配置待切换、未复制回退、完整复制后启动切换及原目录保留通过。测试使用隔离目录，未迁移用户实际数据。
+
+0.1.9：33/33 回归通过；最终优化打包核心桌面检查 output/desktop-smoke-CWhsSh/report.json 12 项通过。@所有人 双入口检查 output/composer-ui-uu7WUT/report.json。渲染合成基准及包体对照见 HANDOFF 0.1.9 节，不能解释为模型加速。

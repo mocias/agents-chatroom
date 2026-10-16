@@ -1,0 +1,67 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const { _electron } = require('playwright-core');
+(async () => {
+ const home = fs.mkdtempSync(path.resolve('output/composer-ui-'));
+ fs.mkdirSync(path.join(home,'data'));
+ const agents = Array.from({length:30},(_,i)=>({id:'agent-'+i,label:i===0?'codex-gpt5.6-sol':i===1?'设计 师':'伙伴'+i,backend:'dsh',workspace:home,aliases:[],createdAt:new Date().toISOString()}));
+ const conversations=agents.map((a,i)=>({id:'chat-'+i,kind:'direct',title:a.label,agentIds:[a.id],updatedAt:new Date().toISOString()}));
+ conversations.unshift({id:'group-test',kind:'group',title:'测试群',agentIds:agents.slice(0,2).map(a=>a.id),updatedAt:new Date().toISOString()});
+ fs.writeFileSync(path.join(home,'data/catalog.json'),JSON.stringify({version:1,agents,conversations}));
+ fs.writeFileSync(path.join(home,'data/discovery-consent.json'),JSON.stringify({choice:'manual'}));
+ const env={...process.env,AGENT_ROOM_DESKTOP_HOME:home};delete env.ELECTRON_RUN_AS_NODE;
+ const app=await _electron.launch({executablePath:process.env.UI_EXECUTABLE || path.resolve('dist/win-unpacked/Agent Room.exe'),...(process.env.UI_DEV ? {args:['desktop/main.cjs']} : {}),env});
+ const checks=[];
+ try {
+  const page=await app.firstWindow();
+  // Fixture histories avoid starting a model; real static UI and rename endpoints are used.
+  await page.route('**/api/conversation?*', route=>route.fulfill({json:{pending:false,snapshot:{members:agents,busy:[],log:Array.from({length:80},(_,i)=>({kind:'user',text:'测试长聊天记录 '+i,authorLabel:'用户',ts:new Date().toISOString()}))}}}));
+  await page.locator('[data-room="group-test"]').click();
+  await page.locator('#draft').fill('@');
+  await page.getByRole('option').first().waitFor();
+  assert.equal(await page.getByRole('option').count(),3);
+  await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
+  assert.equal(await page.locator('#draft').inputValue(),'@设计 师 ');
+  assert.equal(await page.getByRole('option').count(),0);
+  assert.equal(await page.locator('#mention-suggestions').isVisible(),false);
+  await page.locator('#draft').fill('请 @codex');
+  await page.getByRole('option',{name:'C codex-gpt5.6-sol'}).click();
+  assert.equal(await page.locator('#draft').inputValue(),'请 @codex-gpt5.6-sol ');
+  await page.locator('#draft').fill('mail@example.com');
+  assert.equal(await page.locator('#mention-suggestions').isVisible(),false);
+  await page.locator('#draft').fill('@');await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#mention-suggestions').isVisible(),false);
+  await page.locator('#draft').fill('@所有'); await page.keyboard.press('Enter');
+  assert.equal(await page.locator('#draft').inputValue(),'@所有人 ');
+  await page.locator('#mention').click(); await page.locator('[data-member="__all__"]').click();
+  assert.equal(await page.locator('#draft').inputValue(),'@所有人 @所有人 ');
+  checks.push('All-members mention is selectable from autocomplete and mention button');
+  checks.push('Only current members suggested; dotted and spaced names insert by mouse/keyboard; Enter selects without sending; Escape and email suppression');
+  const before=await page.evaluate(()=>({top:document.querySelector('.sidebar').getBoundingClientRect().top,list:document.querySelector('#conversations').scrollTop}));
+  await page.locator('#messages').hover();await page.mouse.wheel(0,-1800);await page.waitForTimeout(300);
+  const after=await page.evaluate(()=>({top:document.querySelector('.sidebar').getBoundingClientRect().top,list:document.querySelector('#conversations').scrollTop,page:scrollY,overflow:document.documentElement.scrollHeight-innerHeight}));
+  assert.equal(after.top,before.top);assert.equal(after.list,before.list);assert.equal(after.page,0);assert.equal(after.overflow,0);
+  const messageScroll=await page.locator('#messages').evaluate(el=>el.scrollTop);
+  await page.locator('#conversations').hover();await page.mouse.wheel(0,900);await page.waitForTimeout(300);
+  assert.ok(await page.locator('#conversations').evaluate(el=>el.scrollTop>0));
+  assert.equal(await page.locator('#messages').evaluate(el=>el.scrollTop),messageScroll);
+  checks.push('Long history and 30 contacts scroll independently without moving page/sidebar');
+  await page.locator('[data-room="chat-0"]').click({button:'right'});
+  await page.getByRole('menuitem',{name:'重命名'}).click();
+  await page.locator('#modal-content [name="label"]').fill('新名字');
+  await page.getByRole('button',{name:'保存名称'}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
+  await page.locator('[data-room="group-test"]').click({button:'right'});
+  await page.getByRole('menuitem',{name:'重命名'}).click();
+  await page.locator('#modal-content [name="label"]').fill('新群名');
+  await page.getByRole('button',{name:'保存名称'}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
+  await page.locator('[data-room="group-test"]').click();
+  assert.equal(await page.locator('#chat-title').textContent(),'新群名');
+  await page.locator('#draft').fill('@新');await page.getByRole('option').first().waitFor();
+  assert.equal(await page.getByRole('option').count(),1);assert.match(await page.getByRole('option').textContent(),/新名字/);
+  await page.screenshot({path:path.join(home,'mention.png')});
+  checks.push('Agent and group rename via context menus; title and @ suggestions reflect new name');
+  fs.writeFileSync(path.join(home,'report.json'),JSON.stringify({ok:true,checks},null,2));console.log(JSON.stringify({home,checks}));
+ } finally {await app.close();}
+})().catch(e=>{console.error(e);process.exitCode=1});
+

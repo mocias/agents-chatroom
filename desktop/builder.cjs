@@ -7,10 +7,13 @@ module.exports = {
   extraMetadata: { main: 'desktop/main.cjs' },
   files: ['desktop/main.cjs', 'desktop/assets/icon.ico', 'standalone/**', 'lib/**', 'package.json', 'LICENSE'],
   asar: true,
+  compression: 'maximum',
+  electronLanguages: ['en-US', 'zh-CN', 'zh-TW'],
   electronDist: 'node_modules/electron/dist',
   npmRebuild: false,
   win: { target: ['nsis'], icon: 'desktop/assets/icon.ico' },
   nsis: {
+    include: 'desktop/preserve-agents.nsh',
     oneClick: false,
     perMachine: false,
     allowElevation: false,

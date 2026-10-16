@@ -17,3 +17,19 @@ test('explicit reasoning overrides CHAT policy and locked models are never repla
   assert.equal(room.members[0].model, 'missing');
   assert.equal(room.effortFor(room.members[0]), 'high');
 });
+test('ACP sends the selected persona on the first prompt, retries after failure, and isolates sessions', async () => {
+  const pool = new AcpPool({ agentCommand: 'unused' });
+  pool.threads.set('a', { id: 'session-a', options: { developerInstructions: '你是设计师甲' } });
+  pool.threads.set('b', { id: 'session-b', options: { developerInstructions: '你是审查员乙' } });
+  const prompts = []; let fail = true;
+  pool.request = async (method, params) => { assert.equal(method, 'session/prompt'); prompts.push(params); if (fail) { fail = false; throw new Error('retry'); } return { stopReason: 'end_turn' }; };
+  await assert.rejects(pool.runTurn('a', { text: '你好' }), /retry/);
+  await pool.runTurn('a', { text: '你好' });
+  await pool.runTurn('a', { text: '继续' });
+  await pool.runTurn('b', { text: '你好' });
+  assert.match(prompts[0].prompt[0].text, /设计师甲/);
+  assert.match(prompts[1].prompt[0].text, /设计师甲/);
+  assert.equal(prompts[2].prompt[0].text, '继续');
+  assert.match(prompts[3].prompt[0].text, /审查员乙/);
+  assert.doesNotMatch(prompts[3].prompt[0].text, /设计师甲/);
+});

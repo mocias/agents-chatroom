@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { createApplication } = require('../standalone/server.cjs');
+const { createDataLocation } = require('../standalone/data-location.cjs');
 
 app.setName('Agent Room');
 app.setAppUserModelId('com.mocias.agentroom');
@@ -32,6 +33,7 @@ function secureWindow(win, isMain) {
     event.preventDefault();
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^codex:\/\/threads\/[0-9a-f-]{36}$/i.test(url)) { void shell.openExternal(url); return { action: 'deny' }; }
     if (attachmentUrl(url)) {
       const preview = new BrowserWindow({ width: 900, height: 700, title: '附件预览 · Agent Room', icon, parent: window, webPreferences: preferences });
       preview.setMenu(null);
@@ -53,10 +55,12 @@ function makeMenu(dataDir) {
   ]));
 }
 async function start() {
-  const dataDir = path.join(app.getPath('userData'), 'data');
+  const dataLocation = createDataLocation(path.join(app.getPath('userData'), 'data'), path.join(app.getPath('userData'), 'data-location.json'));
+  const dataDir = dataLocation.current;
   const stateFile = path.join(app.getPath('userData'), 'window.json');
   const token = randomBytes(32).toString('hex');
-  service = createApplication({ dataDir, accessToken: token, chooseBackendFile: async () => {
+  const workspaceRoot = process.env.AGENT_ROOM_WORKSPACE_ROOT || path.join(app.isPackaged ? path.dirname(app.getPath('exe')) : path.resolve(__dirname, '..'), 'agents');
+  service = createApplication({ dataDir, dataLocation, workspaceRoot, accessToken: token, chooseBackendFile: async () => {
     const result = await dialog.showOpenDialog(window, { title: '选择 Agent 后端程序', properties: ['openFile'], filters: [{ name: '后端程序', extensions: ['exe', 'cmd', 'js', 'cjs', 'mjs'] }] });
     return result.canceled ? null : result.filePaths[0];
   }, chooseWorkspaceDirectory: async () => {

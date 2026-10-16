@@ -28,7 +28,7 @@ function fakeFactory(captured) {
 }
 async function start(t, options = {}) {
   const dataDir = options.dataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'agent-room-test-'));
-  const app = createApplication({ dataDir, discoveryInventory: async () => ({ rows: [], warning: '' }), ...options });
+  const app = createApplication({ dataDir, workspaceRoot: path.join(dataDir, 'agents'), registerAgent: async () => ({ status: 'registered' }), prepareNativeSession: async () => ({}), afterNativeTurn: async () => {}, discoveryInventory: async () => ({ rows: [], warning: '' }), ...options });
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const url = 'http://127.0.0.1:' + app.server.address().port;
   const call = async (route, body) => {
@@ -42,6 +42,23 @@ async function until(fn) {
   for (let i = 0; i < 100; i++) { const result = await fn(); if (result) return result; await new Promise((resolve) => setTimeout(resolve, 20)); }
   throw new Error('Timed out');
 }
+test('deleting an Agent requires an explicit workspace choice, keeps group history and protects shared folders', async t => {
+  const env = await start(t, { roomFactory: fakeFactory([]) });
+  const a = (await env.call('/agents', { label: '删除测试', backend: 'dsh' })).data.agent;
+  const b = (await env.call('/agents', { label: '保留测试', backend: 'dsh', workspace: a.workspace })).data.agent;
+  const group = (await env.call('/groups', { agentIds: [a.id, b.id] })).data.conversation;
+  fs.writeFileSync(path.join(a.workspace, 'keep.txt'), 'keep');
+  assert.equal((await env.call('/agents/delete', { id: a.id })).status, 400);
+  assert.equal((await env.call('/agents/delete', { id: a.id, deleteWorkspace: true, confirmWorkspace: a.workspace })).status, 400);
+  assert.equal((await env.call('/agents/delete', { id: a.id, deleteWorkspace: false })).status, 200);
+  assert.equal(fs.readFileSync(path.join(a.workspace, 'keep.txt'), 'utf8'), 'keep');
+  const catalog = (await env.call('/catalog')).data;
+  assert.deepEqual(catalog.conversations.find(c => c.id === group.id).agentIds, [b.id]);
+  assert.equal((await env.call('/agents/delete', { id: b.id, deleteWorkspace: true, confirmWorkspace: b.workspace })).status, 200);
+  assert.equal(fs.existsSync(b.workspace), false);
+  assert.equal((await env.call('/conversation?id=' + group.id)).status, 200);
+  assert.equal((await env.call('/say', { room: group.id, text: 'hi' })).status, 400);
+});
 test('no discovery runs before consent or in manual mode; consent persists across restart', async t => {
   let scans = 0;
   const inventory = async () => { scans++; return { rows: [], warning: '' }; };
@@ -68,7 +85,7 @@ test('fixed model validation and per-conversation reasoning survive restart with
   const a = (await env.call('/agents', { label: '固定助手', backend: 'codex', model: 'fixed' })).data.agent;
   const b = (await env.call('/agents', { label: 'DSH助手', backend: 'dsh', model: 'fixed' })).data.agent;
   assert.equal(a.modelLocked, true);
-  assert.equal(a.workspace, path.join(env.dataDir, 'workspaces', 'codex', '固定助手'));
+  assert.equal(a.workspace, path.join(env.dataDir, 'agents', 'codex', '固定助手'));
   assert.equal(fs.statSync(a.workspace).isDirectory(), true);
   const group = (await env.call('/groups', { agentIds: [a.id, b.id] })).data.conversation;
   const group2 = (await env.call('/groups', { agentIds: [a.id, b.id] })).data.conversation;
@@ -206,4 +223,69 @@ test('backend management validates and persists paths, supports desktop picker, 
   assert.equal((await restored.call('/backends')).data.harnesses.find((h) => h.id === 'qoder').configured, true);
   assert.equal((await restored.call('/backends', { id: 'qoder', automatic: true })).data.harnesses.find((h) => h.id === 'qoder').configured, false);
   assert.equal((await restored.call('/backends/browse', {})).status, 400);
+});
+
+test('agent settings preserve files, persist pins and reject invalid edits', async t => {
+  const queryModels = async () => ({ models: [{ id: 'fixed', name: 'Fixed', efforts: ['low', 'high'], defaultEffort: 'low' }] });
+  let latestSettings;
+  const factory = fakeFactory([]);
+  const env = await start(t, { queryModels, roomFactory: settings => { latestSettings = settings; return factory(settings); } });
+  const added = (await env.call('/agents', { label: '设置测试', backend: 'dsh', model: 'fixed' })).data;
+  const {agent, conversation: room} = added;
+  const next = path.join(env.dataDir, 'new-workspace'); fs.mkdirSync(next);
+  fs.writeFileSync(path.join(agent.workspace, 'keep.txt'), 'original');
+  await env.call('/conversation?id=' + room.id);
+  assert.equal((await env.call('/agents/settings', { id: agent.id, room: room.id, workspace: next, effort: 'invalid' })).status, 400);
+  assert.equal((await env.call('/agents/settings', { id: agent.id, room: room.id, workspace: next, model: 'other' })).status, 400);
+  assert.equal((await env.call('/agents/settings', { id: agent.id, room: room.id, workspace: next, effort: 'high' })).status, 200);
+  assert.equal((await env.call('/conversation/pin', { id: room.id, pinned: true })).status, 200);
+  const data = (await env.call('/catalog')).data;
+  assert.equal(data.agents[0].workspace, fs.realpathSync(next));
+  assert.equal(data.agents[0].model, 'fixed');
+  assert.equal(data.conversations[0].efforts[agent.id], 'high');
+  assert.equal(data.conversations[0].pinned, true);
+  assert.equal(fs.readFileSync(path.join(agent.workspace, 'keep.txt'), 'utf8'), 'original');
+  const snap = (await env.call('/conversation?id=' + room.id)).data.snapshot;
+  assert.equal(latestSettings.members[0].workspace, fs.realpathSync(next));
+  await env.app.close();
+  const reopened = await start(t, { dataDir: env.dataDir, queryModels, roomFactory: fakeFactory([]) });
+  assert.equal((await reopened.call('/catalog')).data.conversations[0].pinned, true);
+  assert.equal((await reopened.call('/conversation/pin', { id: room.id, pinned: false })).status, 200);
+  assert.equal((await reopened.call('/catalog')).data.conversations[0].pinned, false);
+});
+
+test('renaming agents and groups persists names without moving workspace or changing history', async t => {
+  const env = await start(t, { roomFactory: fakeFactory([]) });
+  const a = (await env.call('/agents', { label: '旧名字', backend: 'dsh' })).data;
+  const b = (await env.call('/agents', { label: '已占用', backend: 'dsh' })).data;
+  const group = (await env.call('/groups', { agentIds: [a.agent.id, b.agent.id] })).data.conversation;
+  assert.equal((await env.call('/conversation/rename', { id: a.conversation.id, name: '已占用' })).status, 400);
+  assert.equal((await env.call('/conversation/rename', { id: a.conversation.id, name: '@非法' })).status, 400);
+  assert.equal((await env.call('/conversation/rename', { id: a.conversation.id, name: '新名字' })).status, 200);
+  assert.equal((await env.call('/conversation/rename', { id: group.id, name: '新群聊' })).status, 200);
+  await env.app.close();
+  const again = await start(t, { dataDir: env.dataDir, roomFactory: fakeFactory([]) });
+  const data = (await again.call('/catalog')).data;
+  assert.equal(data.agents[0].label, '新名字');
+  assert.equal(data.agents[0].workspace, a.agent.workspace);
+  assert.deepEqual(data.agents[0].aliases, ['新名字']);
+  assert.equal(data.conversations.find(c => c.id === a.conversation.id).title, '新名字');
+  assert.equal(data.conversations.find(c => c.id === group.id).title, '新群聊');
+  assert.deepEqual(data.conversations.find(c => c.id === group.id).agentIds, group.agentIds);
+});
+
+test('manually copied data restores history attachments from the new directory', async t => {
+ const captured=[];const env=await start(t,{roomFactory:fakeFactory(captured)});
+ const a=(await env.call('/agents',{label:'迁移附件',backend:'dsh'})).data;
+ const response=await fetch(env.url+'/api/attach?name=note.txt&type=text/plain',{method:'POST',body:'copied bytes'});
+ const file=(await response.json()).attachment;
+ await env.call('/say',{room:a.conversation.id,text:'读取附件',attachments:[file.id]});
+ await until(async()=>!(await env.call('/conversation?id='+a.conversation.id)).data.pending);
+ await env.app.close();
+ const newDir=env.dataDir+'-copy';fs.cpSync(env.dataDir,newDir,{recursive:true});
+ const restored=await start(t,{dataDir:newDir,roomFactory:fakeFactory(captured)});
+ assert.equal(await (await fetch(restored.url+'/api/attachment/'+file.id)).text(),'copied bytes');
+ await restored.call('/say',{room:a.conversation.id,text:'继续'});
+ await until(()=>captured.length===2);
+ assert.ok(captured[1].input.text.includes(newDir), 'history broadcast should use the new attachment path');
 });

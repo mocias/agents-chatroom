@@ -8,14 +8,18 @@ const { RoomApi, readJsonBody, sendJson, sendText } = require('../lib/server.cjs
 const { harnessIds } = require('../lib/harnesses.cjs');
 const { BackendDiscovery } = require('./discovery.cjs');
 const { queryModels } = require('./models.cjs');
-const { chooseWorkspace } = require('./workspaces.cjs');
+const { createDataLocation } = require('./data-location.cjs');
+const { chooseWorkspace, assertDeletable } = require('./workspaces.cjs');
+const { ensureCodexProject, registerAgent } = require('./desktop-sync.cjs');
 
 // This host owns contacts and conversations; the existing engine owns turns.
 function createApplication(options = {}) {
   const dataDir = path.resolve(options.dataDir || process.env.AGENT_ROOM_DATA || path.join(__dirname, '..', '.agent-room-data'));
+  const workspaceRoot = path.resolve(options.workspaceRoot || process.env.AGENT_ROOM_WORKSPACE_ROOT || path.join(__dirname, '..', 'agents'));
   fs.mkdirSync(dataDir, { recursive: true });
   const catalogFile = path.join(dataDir, 'catalog.json');
   let catalog = fs.existsSync(catalogFile) ? JSON.parse(fs.readFileSync(catalogFile, 'utf8')) : { version: 1, agents: [], conversations: [] };
+  if (!fs.existsSync(catalogFile)) fs.writeFileSync(catalogFile, JSON.stringify(catalog, null, 2));
   const configFile = path.join(dataDir, 'backends.json');
   const config = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, 'utf8')) : {};
   const consentFile = path.join(dataDir, 'discovery-consent.json');
@@ -27,11 +31,12 @@ function createApplication(options = {}) {
   const workspaceDirs = {};
   for (const backend of harnessIds()) {
     workspaceDirs[backend] = path.join(dataDir, 'workspaces', backend);
-    fs.mkdirSync(workspaceDirs[backend], { recursive: true });
+    if (catalog.agents.some(a => a.backend === backend && !a.workspace)) fs.mkdirSync(workspaceDirs[backend], { recursive: true });
   }
   const api = new RoomApi({ roomsDir, idleRoomTtlMs: 0, maxUploadBytes: 20 * 1024 * 1024 });
   if (!fs.existsSync(path.join(dataDir, 'agent-room-theme', 'theme.json'))) api.theme.update({ preset: 'paper' });
   const runtimes = new Map();
+  const syncingAgents = new Set();
   const modelCache = new Map();
   async function modelsFor(id, model, refresh = false) {
     if (!['codex', 'dsh', 'qoder'].includes(id)) throw new Error('该后端尚未接入模型查询');
@@ -40,7 +45,7 @@ function createApplication(options = {}) {
     if (!refresh && cached && Date.now() - cached.at < 300000) return cached.value;
     const row = (await discovery.scan()).find(r => r.id === id);
     if (!row?.selected && !options.queryModels) throw new Error(row?.detail || '后端不可用');
-    const value = await (options.queryModels || queryModels)(id, row?.selected?.launch, workspaceDirs[id], model);
+    const value = await (options.queryModels || queryModels)(id, row?.selected?.launch, dataDir, model);
     modelCache.set(key, { at: Date.now(), value });
     return value;
   }
@@ -57,6 +62,15 @@ function createApplication(options = {}) {
     for (const client of clients) client.write(wire);
   }
   function changed() { publish({ type: 'catalog', catalog }); }
+  async function syncAgent(agent) {
+    if (syncingAgents.has(agent.id)) throw new Error('正在同步，请稍后');
+    syncingAgents.add(agent.id);
+    try {
+      const row = (await discovery.scan()).find(r => r.id === agent.backend);
+      return await (options.registerAgent || registerAgent)(agent, row?.selected?.launch);
+    } catch (error) { return { status: 'error', detail: '桌面同步失败：' + error.message }; }
+    finally { syncingAgents.delete(agent.id); }
+  }
   // Preserve old contacts' actual directories; new contacts get their own folder.
   if (catalog.agents.some(a => !a.workspace)) save({ ...catalog, agents: catalog.agents.map(a => a.workspace ? a : { ...a, workspace: workspaceDirs[a.backend] || dataDir }) });
   function conversation(id) {
@@ -74,13 +88,34 @@ function createApplication(options = {}) {
     for (const backend of detected) if (backend.selected) backends[backend.id] = backend.selected.launch;
     const members = row.agentIds.map((key) => ({ ...catalog.agents.find((agent) => agent.id === key),
       ...(row.efforts && Object.hasOwn(row.efforts, key) ? { effort: row.efforts[key] } : {}) }));
-    const room = factory({ id, title: row.title, members, backend: members[0].backend,
+    const room = factory({ id, title: row.title, members, backend: members[0]?.backend || 'codex',
       cwd: dataDir, workspaceDirs, backends, codexPath: backends.codex?.codexPath,
       logFile: path.join(roomsDir, id + '.log.jsonl'), mode: 'chat', prewarm: false,
       replyPolicy: row.kind === 'direct' ? 'everyone' : 'addressed', projectName: null,
+      prepareNativeSession: options.prepareNativeSession || (async (member, pool) => {
+        if (member.backend !== 'codex') return {};
+        const agent = catalog.agents.find(a => a.id === member.id);
+        try { return { projectId: await ensureCodexProject(pool, agent) }; }
+        catch (error) {
+          const desktopSync = { status: 'error', detail: '项目同步失败，对话仍可继续：' + error.message };
+          save({ ...catalog, agents: catalog.agents.map(a => a.id === agent.id ? { ...a, desktopSync } : a) }); changed();
+          room.pushSystem(desktopSync.detail); return {};
+        }
+      }),
+      afterNativeTurn: options.afterNativeTurn || (async (member, pool, thread) => {
+        if (member.backend === 'codex') await pool.request('thread/name/set', { threadId: thread.id, name: row.title + ' · ' + member.label });
+      }),
       segmentMs: 1200, maxRelayHops: 2 });
+    for (const record of room.log) api.attachments.rehydrate(record);
     const state = { room, connecting: null, pending: false, lastUsed: Date.now() };
     runtimes.set(id, state);
+    room.on('session', event => {
+      // Save the native identity for verification and future resume support.
+      const next = { ...catalog, conversations: catalog.conversations.map(c => c.id === id ? {
+        ...c, nativeSessions: { ...c.nativeSessions, [event.memberId]: { backend: event.backend, id: event.sessionId, cwd: event.cwd } },
+      } : c) };
+      save(next);
+    });
     room.on('update', (snapshot) => publish({ type: 'snapshot', room: id, snapshot: api._publicSnapshot(snapshot) }));
     room.on('stream', (event) => {
       publish({ type: 'stream', room: id, event });
@@ -128,8 +163,16 @@ function createApplication(options = {}) {
       if (assetRoutes.has(route) || route.startsWith('/api/attachment/')) {
         if (await api.handle(req, res, { prefix: '/api' })) return;
       }
+      if (route === '/api/data-location') {
+        if (req.method === 'GET') return sendJson(res, 200, { ...(options.dataLocation?.status() || { current: dataDir }), configurable: Boolean(options.dataLocation), canBrowse: Boolean(options.chooseWorkspaceDirectory) });
+        if (req.method === 'POST') {
+          if (!options.dataLocation) throw new Error('此启动方式不支持保存数据目录设置');
+          const body = await readJsonBody(req);
+          return sendJson(res, 200, body.cancel ? options.dataLocation.cancel() : options.dataLocation.schedule(body.path));
+        }
+      }
       if (req.method === 'GET' && route === '/api/catalog') {
-        return sendJson(res, 200, { ...catalog, discoveryChoice, canChooseWorkspace: Boolean(options.chooseWorkspaceDirectory), workspaceRoot: path.join(dataDir, 'workspaces'), harnesses: discovery.publicRows(await discovery.scan()) });
+        return sendJson(res, 200, { ...catalog, discoveryChoice, canChooseWorkspace: Boolean(options.chooseWorkspaceDirectory), workspaceRoot, harnesses: discovery.publicRows(await discovery.scan()) });
       }
       if (req.method === 'POST' && route === '/api/models') {
         const body = await readJsonBody(req);
@@ -210,6 +253,7 @@ function createApplication(options = {}) {
         return sendJson(res, 200, { snapshot: api._publicSnapshot(state.room.snapshot()), pending: state.pending });
       }
       if (req.method === 'POST' && route === '/api/agents') {
+        if (configuring) throw new Error('正在更新配置，请稍后');
         const body = await readJsonBody(req);
         const label = String(body.label || '').trim();
         if (!label || label.length > 40 || /[\r\n@]/.test(label)) throw new Error('名称需为 1–40 个字符，不能包含 @ 或换行');
@@ -220,10 +264,11 @@ function createApplication(options = {}) {
           const capabilities = await modelsFor(body.backend, body.model);
           chosen = capabilities.models.find(m => m.id === body.model);
           if (!chosen) throw new Error('请选择后端返回的有效模型');
+          if (configuring) throw new Error('正在更新配置，请稍后');
           if (catalog.agents.some(a => a.label.toLowerCase() === label.toLowerCase())) throw new Error('Agent 名称已存在');
         }
         const agent = { id: 'agent-' + randomUUID(), label, backend: body.backend,
-          workspace: chooseWorkspace(dataDir, body.backend, label, body.workspace),
+          workspace: chooseWorkspace(workspaceRoot, body.backend, label, body.workspace),
           model: chosen?.id || String(body.model || '').trim().slice(0, 120) || null,
           modelLocked: Boolean(chosen), modelName: chosen ? [chosen.provider, chosen.name].filter(Boolean).join(' · ') : null,
           ...(chosen ? { effort: chosen.defaultEffort || null } : {}),
@@ -231,9 +276,128 @@ function createApplication(options = {}) {
         const direct = { id: 'chat-' + randomUUID(), kind: 'direct', title: label, agentIds: [agent.id], updatedAt: agent.createdAt, preview: '开始聊天吧' };
         save({ ...catalog, agents: [...catalog.agents, agent], conversations: [...catalog.conversations, direct] });
         changed();
+        agent.desktopSync = await syncAgent(agent);
+        if (catalog.agents.some(a => a.id === agent.id)) { save({ ...catalog, agents: catalog.agents.map(a => a.id === agent.id ? agent : a) }); changed(); }
         return sendJson(res, 201, { agent, conversation: direct });
       }
+      if (req.method === 'POST' && route === '/api/conversation/rename') {
+        const body = await readJsonBody(req); const row = conversation(body.id);
+        const name = String(body.name || '').trim();
+        if (!name || name.length > (row.kind === 'direct' ? 40 : 60) || /[\r\n@]/.test(name)) throw new Error('名称不能为空、过长或包含 @、换行');
+        if (configuring) throw new Error('正在更新配置，请稍后');
+        const agent = row.kind === 'direct' ? catalog.agents.find(a => a.id === row.agentIds[0]) : null;
+        if (row.kind === 'direct' && !agent) throw new Error('Agent 不存在');
+        if (agent && catalog.agents.some(a => a.id !== agent.id && a.label.toLowerCase() === name.toLowerCase())) throw new Error('Agent 名称已存在');
+        if (agent && syncingAgents.has(agent.id)) throw new Error('正在同步，请稍后');
+        const affected = agent ? catalog.conversations.filter(c => c.agentIds.includes(agent.id)) : [row];
+        for (const c of affected) {
+          const active = runtimes.get(c.id);
+          if (active && (active.pending || active.room.snapshot().busy.length)) throw new Error('请等待相关会话回复结束后再重命名');
+        }
+        configuring = true;
+        try {
+          if (agent) for (const c of affected) { const active = runtimes.get(c.id); if (active) await release(active); runtimes.delete(c.id); }
+          save({ ...catalog,
+            agents: catalog.agents.map(a => a.id === agent?.id ? { ...a, label: name, aliases: [name] } : a),
+            conversations: catalog.conversations.map(c => {
+              let next = c;
+              if (agent && c.agentIds.includes(agent.id)) next = { ...next, nativeSessions: {} };
+              if (c.id === row.id || (agent && c.kind === 'direct' && c.agentIds.includes(agent.id))) next = { ...next, title: name };
+              return next;
+            }) });
+          if (!agent && runtimes.has(row.id)) runtimes.get(row.id).room.title = name;
+          changed(); return sendJson(res, 200, { ok: true });
+        } finally { configuring = false; }
+      }
+      if (req.method === 'POST' && route === '/api/conversation/pin') {
+        const body = await readJsonBody(req);
+        const row = conversation(body.id);
+        if (row.kind !== 'direct' || typeof body.pinned !== 'boolean') throw new Error('请选择有效的 Agent 和置顶状态');
+        if (configuring) throw new Error('正在更新配置，请稍后');
+        save({ ...catalog, conversations: catalog.conversations.map(c => c.id === row.id ? { ...c, pinned: body.pinned } : c) });
+        changed(); return sendJson(res, 200, { ok: true });
+      }
+      if (req.method === 'POST' && route === '/api/agents/settings') {
+        const body = await readJsonBody(req);
+        if (Object.hasOwn(body, 'model')) throw new Error('不能修改 Agent 的固定模型');
+        let agent = catalog.agents.find(a => a.id === body.id);
+        const row = conversation(body.room);
+        if (!agent || !row.agentIds.includes(agent.id)) throw new Error('会话成员不存在');
+        if (Object.hasOwn(body, 'effort')) {
+          const capabilities = await modelsFor(agent.backend, agent.model);
+          if (!capabilities.models.find(m => m.id === agent.model)?.efforts.includes(body.effort)) throw new Error('该模型不支持所选推理强度');
+        }
+        agent = catalog.agents.find(a => a.id === body.id);
+        if (!agent || configuring || syncingAgents.has(agent.id)) throw new Error('Agent 不存在或正在更新配置');
+        if (typeof body.workspace !== 'string' || !body.workspace.trim()) throw new Error('请填写工作区完整路径');
+        const affected = catalog.conversations.filter(c => c.agentIds.includes(agent.id));
+        for (const c of affected) {
+          const active = runtimes.get(c.id);
+          if (active && (active.pending || active.room.snapshot().busy.length)) throw new Error('请等待相关会话回复结束后再修改');
+        }
+        const workspace = chooseWorkspace(workspaceRoot, agent.backend, agent.label, body.workspace);
+        const moved = workspace !== agent.workspace;
+        configuring = true;
+        try {
+          if (moved) for (const c of affected) { const active = runtimes.get(c.id); if (active) await release(active); runtimes.delete(c.id); }
+          save({ ...catalog, agents: catalog.agents.map(a => a.id === agent.id ? { ...a, workspace, ...(moved ? { desktopSync: { status: 'pending', detail: '工作区已更改，尚未同步原桌面项目' } } : {}) } : a), conversations: catalog.conversations.map(c => {
+            let next = c;
+            if (moved && c.agentIds.includes(agent.id)) next = { ...next, nativeSessions: {} };
+            if (c.id === row.id && Object.hasOwn(body, 'effort')) next = { ...next, efforts: { ...next.efforts, [agent.id]: body.effort } };
+            return next;
+          }) });
+          const active = runtimes.get(row.id);
+          if (active && Object.hasOwn(body, 'effort')) active.room.members.find(m => m.id === agent.id).effort = body.effort;
+          changed(); return sendJson(res, 200, { ok: true });
+        } finally { configuring = false; }
+      }
+      if (req.method === 'POST' && route === '/api/agents/sync') {
+        const body = await readJsonBody(req);
+        const agent = catalog.agents.find(a => a.id === body.id);
+        if (!agent || configuring) throw new Error('Agent 不存在或正在更新配置');
+        const desktopSync = await syncAgent(agent);
+        save({ ...catalog, agents: catalog.agents.map(a => a.id === agent.id ? { ...a, desktopSync } : a) }); changed();
+        return sendJson(res, 200, { desktopSync });
+      }
+      if (req.method === 'POST' && route === '/api/agents/delete') {
+        const body = await readJsonBody(req);
+        const agent = catalog.agents.find(a => a.id === body.id);
+        if (!agent) throw new Error('Agent 不存在');
+        if (syncingAgents.has(agent.id)) throw new Error('正在同步项目，请完成后再删除');
+        if (typeof body.deleteWorkspace !== 'boolean') throw new Error('请选择是否删除工作区');
+        if (configuring) throw new Error('正在更新配置，请稍后');
+        const affected = catalog.conversations.filter(c => c.agentIds.includes(agent.id));
+        for (const c of affected) {
+          const active = runtimes.get(c.id);
+          if (active && (active.pending || active.room.snapshot().busy.length)) throw new Error('请等待相关会话回复结束后再删除 Agent');
+        }
+        let target;
+        if (body.deleteWorkspace) {
+          if (body.confirmWorkspace !== agent.workspace) throw new Error('请输入完整工作区路径以确认删除');
+          target = assertDeletable(agent.workspace, {
+            protectedPaths: [dataDir, workspaceRoot, path.resolve(__dirname, '..'), process.env.USERPROFILE, process.env.SystemRoot, process.env.ProgramFiles].filter(Boolean),
+            otherWorkspaces: catalog.agents.filter(a => a.id !== agent.id).map(a => a.workspace),
+          });
+        }
+        configuring = true;
+        try {
+          for (const c of affected) { const active = runtimes.get(c.id); if (active) await release(active); runtimes.delete(c.id); }
+          // Move the exact verified folder aside before committing catalog changes.
+          // A failed catalog write can restore it; a failed cleanup is surfaced.
+          const staged = target && fs.existsSync(target) ? target + '.agent-room-delete-' + randomUUID() : null;
+          if (staged) fs.renameSync(target, staged);
+          try {
+            save({ ...catalog, agents: catalog.agents.filter(a => a.id !== agent.id), conversations: catalog.conversations
+              .filter(c => !(c.kind === 'direct' && c.agentIds.includes(agent.id)))
+              .map(c => ({ ...c, agentIds: c.agentIds.filter(id => id !== agent.id), efforts: Object.fromEntries(Object.entries(c.efforts || {}).filter(([id]) => id !== agent.id)) })) });
+          } catch (error) { if (staged) fs.renameSync(staged, target); throw error; }
+          let warning = null;
+          if (staged) { try { fs.rmSync(staged, { recursive: true }); } catch { warning = 'Agent 已删除，但工作区清理未完成，请手动处理：' + staged; } }
+          changed(); return sendJson(res, 200, { ok: true, warning });
+        } finally { configuring = false; }
+      }
       if (req.method === 'POST' && route === '/api/groups') {
+        if (configuring) throw new Error('正在更新配置，请稍后');
         const body = await readJsonBody(req);
         const ids = [...new Set(Array.isArray(body.agentIds) ? body.agentIds : [])];
         if (ids.length < 2 || ids.length > 12 || ids.some((id) => !catalog.agents.some((agent) => agent.id === id))) throw new Error('请选择 2–12 个有效 Agent');
@@ -247,6 +411,7 @@ function createApplication(options = {}) {
         if (configuring) throw new Error('正在更新后端配置，请稍后发送');
         const body = await readJsonBody(req);
         const state = await runtime(body.room);
+        if (!state.room.members.length) throw new Error('该群聊已没有 Agent，仅保留历史记录');
         for (const backend of await discovery.scan()) if (backend.status === 'invalid' && state.room.members.some((m) => m.backend === backend.id)) throw new Error(backend.detail);
         if (configuring) throw new Error('正在更新后端配置，请稍后发送');
         const text = String(body.text || '').trim();
@@ -309,7 +474,9 @@ function createApplication(options = {}) {
   return { server, close, dataDir };
 }
 if (require.main === module) {
-  const app = createApplication();
+  const defaultDir = process.env.AGENT_ROOM_DATA || path.join(__dirname, '..', '.agent-room-data');
+  const dataLocation = createDataLocation(defaultDir, path.join(__dirname, '..', '.agent-room-location.json'));
+  const app = createApplication({ dataDir: dataLocation.current, dataLocation });
   const port = Number(process.env.PORT || 4318);
   app.server.listen(port, '127.0.0.1', () => console.log(`Agent Room: http://127.0.0.1:${port}\nData: ${app.dataDir}`));
   app.server.on('error', (error) => { console.error(error.message); process.exitCode = 1; void app.close(); });

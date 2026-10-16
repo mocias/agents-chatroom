@@ -15,8 +15,8 @@ function avatar(agent, group = false) { return `<span class="avatar ${group ? 'g
 function time(ts) { return ts ? new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''; }
 function renderList() {
   const query = $('#search').value.trim().toLowerCase();
-  const rows = state.conversations.filter((row) => (state.filter === 'all' || row.kind === state.filter) && (row.title.toLowerCase().includes(query) || row.agentIds.some((id) => state.agents.find((a) => a.id === id)?.label.toLowerCase().includes(query)))).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  $('#conversations').innerHTML = rows.length ? rows.map((row) => `<button class="conversation ${row.id === state.current ? 'active' : ''}" data-room="${row.id}" aria-current="${row.id === state.current}">${avatar(state.agents.find((a) => a.id === row.agentIds[0]), row.kind === 'group')}<div class="conversation-info"><div class="conversation-top"><strong>${escapeHtml(row.title)}</strong><time>${time(row.updatedAt)}</time>${state.unread.has(row.id) ? '<i class="unread"></i>' : ''}</div><p>${escapeHtml(row.preview || '开始聊天吧')}</p></div></button>`).join('') : '<p class="empty-list">' + (query ? '没有找到匹配的会话' : state.filter === 'group' ? '还没有群聊<br>选择几位伙伴，一起聊聊' : '点击搜索框旁的 ＋<br>添加你的第一位 AI 伙伴') + '</p>';
+  const rows = state.conversations.filter((row) => (state.filter === 'all' || row.kind === state.filter) && (row.title.toLowerCase().includes(query) || row.agentIds.some((id) => state.agents.find((a) => a.id === id)?.label.toLowerCase().includes(query)))).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt.localeCompare(a.updatedAt));
+  $('#conversations').innerHTML = rows.length ? rows.map((row) => `<button class="conversation ${row.id === state.current ? 'active' : ''}" data-room="${row.id}" aria-current="${row.id === state.current}">${avatar(state.agents.find((a) => a.id === row.agentIds[0]), row.kind === 'group')}<div class="conversation-info"><div class="conversation-top"><strong>${row.pinned ? '<span class="pin-mark" aria-label="已置顶">⌃ </span>' : ''}${escapeHtml(row.title)}</strong><time>${time(row.updatedAt)}</time>${state.unread.has(row.id) ? '<i class="unread"></i>' : ''}</div><p>${escapeHtml(row.preview || '开始聊天吧')}</p></div></button>`).join('') : '<p class="empty-list">' + (query ? '没有找到匹配的会话' : state.filter === 'group' ? '还没有群聊<br>选择几位伙伴，一起聊聊' : '点击搜索框旁的 ＋<br>添加你的第一位 AI 伙伴') + '</p>';
   $('#welcome-add').textContent = state.agents.length ? '＋ 添加 Agent' : '＋ 添加第一个 Agent';
 }
 function attachmentsHtml(items, removable = false) {
@@ -34,14 +34,47 @@ function renderMessages() {
     const files = (record.attachments || []).map((f) => f.isImage ? `<a href="/api/attachment/${encodeURIComponent(f.id)}" target="_blank" rel="noopener"><img class="message-image" src="/api/attachment/${encodeURIComponent(f.id)}" alt="${escapeHtml(f.name)}"></a>` : `<a class="file-chip" href="/api/attachment/${encodeURIComponent(f.id)}" download="${escapeHtml(f.name)}">▤ ${escapeHtml(f.name)}</a>`).join('');
     return `<article class="message ${isUser ? 'user' : ''}">${isUser ? '<span class="avatar">我</span>' : avatar(agent)}<div class="message-main"><div class="message-meta"><span>${escapeHtml(record.authorLabel)}</span><time>${time(record.ts)}</time></div><div class="bubble">${escapeHtml(record.text)}${files}</div></div></article>`;
   }).join('');
-  for (const live of state.live.values()) {
-    if (live.room !== state.current) continue;
-    const agent = state.agents.find((a) => a.id === live.memberId);
-    panel.insertAdjacentHTML('beforeend', `<article class="message">${avatar(agent)}<div class="message-main"><div class="message-meta">${escapeHtml(agent?.label || 'Agent')} · 正在回复</div><div class="bubble">${escapeHtml(live.text || '正在思考…')}</div></div></article>`);
-  }
+  updateLiveMessages(panel);
   if (!panel.children.length) panel.innerHTML = '<div class="empty-chat"><strong>从一句「你好」开始</strong><p>文字、文件、图片，都可以分享。</p></div>';
   if (stick) panel.scrollTop = panel.scrollHeight;
   updateActivity();
+}
+// Coalesce streaming updates once per frame without rebuilding history DOM.
+let messageFrame = null;
+let fullMessageRender = false;
+function scheduleMessages(full = false) {
+  fullMessageRender ||= full;
+  if (messageFrame !== null) return;
+  messageFrame = requestAnimationFrame(() => {
+    messageFrame = null;
+    const rebuild = fullMessageRender; fullMessageRender = false;
+    if (rebuild) renderMessages();
+    else {
+      const panel = $('#messages'); const stick = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 100;
+      updateLiveMessages(panel);
+      if (stick) panel.scrollTop = panel.scrollHeight;
+      updateActivity();
+    }
+  });
+}
+function updateLiveMessages(panel) {
+  for (const node of panel.querySelectorAll('[data-live]')) {
+    const live = state.live.get(node.dataset.live);
+    if (!live || live.room !== state.current) node.remove();
+  }
+  for (const [id, live] of state.live) {
+    if (live.room !== state.current) continue;
+    panel.querySelector('.empty-chat')?.remove();
+    let node = [...panel.querySelectorAll('[data-live]')].find(n => n.dataset.live === id);
+    if (!node) {
+      const agent = state.agents.find(a => a.id === live.memberId);
+      node = document.createElement('article'); node.className = 'message'; node.dataset.live = id;
+      node.innerHTML = avatar(agent) + '<div class="message-main"><div class="message-meta">' + escapeHtml(agent?.label || 'Agent') + ' · 正在回复</div><div class="bubble"></div></div>';
+      panel.append(node);
+    }
+    const bubble = node.querySelector('.bubble'); const text = live.text || '正在思考…';
+    if (bubble.textContent !== text) bubble.textContent = text;
+  }
 }
 function updateActivity() {
   const busy = state.snapshot?.busy?.length || 0;
@@ -50,6 +83,7 @@ function updateActivity() {
   $('#stop').hidden = !busy;
 }
 async function openConversation(id) {
+  hideMentions();
   if (state.current) state.drafts[state.current] = $('#draft').value;
   state.current = id; state.snapshot = null; state.unread.delete(id);
   localStorage.setItem('agent-room:selected', id);
@@ -77,6 +111,7 @@ function addAgent() {
   showModal('添加 Agent', `<p class="hint">给你的 AI 伙伴取个名字。相同后端也可以添加多位伙伴。</p><label class="field">名称<input name="label" required maxlength="40" placeholder="例如：灵感搭子" autofocus></label><label class="field">后端<select name="backend">${['codex', 'dsh', 'qoder'].map((id) => { const found = state.harnesses.find((h) => h.id === id); return `<option value="${id}">${id === 'dsh' ? 'DSH' : id === 'codex' ? 'Codex' : 'Qoder'} · ${found?.found || found?.configured ? '已发现 / 已配置' : '未检测到'}</option>`; }).join('')}</select></label><p class="hint" id="backend-hint"></p><label class="field">固定模型<select name="model" required></select></label><p class="hint" id="model-hint"></p><button type="button" id="reload-models">重新读取模型</button><label class="field">工作区文件夹<input name="workspace" placeholder="留空自动创建：后端名称/Agent 名称"></label><p class="hint" id="workspace-hint"></p><button type="button" id="choose-workspace">选择文件夹…</button><label class="field">角色设定 <span class="hint">（可选）</span><textarea name="persona" maxlength="2000" placeholder="例如：你是一位擅长发散思考的设计伙伴。"></textarea></label>`, async (form) => {
     const result = await api('/agents', Object.fromEntries(new FormData(form)));
     await refresh(); $('#modal').close(); await openConversation(result.conversation.id);
+    if (result.agent.desktopSync?.status !== 'registered') toast(result.agent.desktopSync?.detail || '桌面同步待处理');
   }, '添加并开始聊天');
   const choose = $('#choose-workspace'); choose.hidden = !state.canChooseWorkspace;
   $('#workspace-hint').textContent = '留空将创建在 ' + state.workspaceRoot + ' 下；同一 Agent 在各群聊中共用文件夹，对话独立。';
@@ -123,6 +158,7 @@ async function backendSettings(selectedId = 'codex', force = false) {
       await api('/backends', { id: $('#backend-id').value, path: $('#backend-path').value, ...(args ? { args: JSON.parse(args) } : {}) });
       $('#modal').close(); await refresh(); if (state.current) await openConversation(state.current); toast('后端配置已保存，下次发送时使用；连接与登录尚未验证');
     }, '保存配置');
+    const storageButton = document.createElement('button'); storageButton.type = 'button'; storageButton.id = 'data-location-settings'; storageButton.textContent = '数据目录与手动迁移…'; storageButton.onclick = () => void dataLocationSettings(); $('#modal-content').prepend(storageButton);
     function fields() {
       const row = result.harnesses.find((r) => r.id === $('#backend-id').value);
       $('#backend-status').textContent = [row.detail, row.selected && `来源：${row.selected.source}`, row.warning].filter(Boolean).join(' · ');
@@ -141,6 +177,17 @@ async function backendSettings(selectedId = 'codex', force = false) {
     };
   } catch (error) { toast(error.message); }
 }
+async function dataLocationSettings() {
+  try {
+    const info = await api('/data-location');
+    showModal('数据目录与手动迁移', '<p>当前数据目录：</p><p class="data-path">' + escapeHtml(info.current) + '</p>' + (info.warning ? '<p class="hint">' + escapeHtml(info.warning) + '</p>' : '') + '<label class="field">下次启动使用的目录<input name="dataPath" required value="' + escapeHtml(info.pending || info.current) + '"></label><button type="button" id="browse-data" ' + (info.canBrowse ? '' : 'hidden') + '>选择文件夹…</button><p class="hint">保存后不会立即切换，也不会自动搬移或删除文件。</p><ol class="hint"><li>保存设置，然后完全退出桌面应用；浏览器版需停止本地服务。</li><li>把当前目录内的全部文件和子文件夹复制到新目录，直接包含 catalog.json、rooms 等，不要再套一层 data。</li><li>重新启动应用。系统校验复制结果，通过后启用新目录；缺失或不一致时继续使用旧目录。</li><li>确认 Agent、历史和附件正常后，再自行决定如何处理旧目录。</li></ol><p class="hint">工作区路径不会自动改变。安装目录下的 agents 或自选工作区仍使用原路径；若旧数据目录内含 workspaces，复制后也需在各 Agent 设置中修改工作区路径。外部后端的登录配置不受影响。</p>' + (info.pending ? '<button type="button" id="cancel-data-change">取消待切换目录</button>' : ''), info.configurable ? async form => {
+      const result = await api('/data-location', { path: new FormData(form).get('dataPath') });
+      await dataLocationSettings(); toast(result.pending ? '已保存。请退出应用、手动复制文件，再重新启动。' : '继续使用当前数据目录');
+    } : null, '保存，下次启动生效');
+    $('#browse-data').onclick = async () => { try { const result = await api('/workspace/browse', {}); if (result.path) $('#modal-content [name="dataPath"]').value = result.path; } catch(e) { $('#modal-error').textContent = e.message; } };
+    if ($('#cancel-data-change')) $('#cancel-data-change').onclick = async () => { try { await api('/data-location', { cancel: true }); await dataLocationSettings(); } catch(e) { $('#modal-error').textContent = e.message; } };
+  } catch(e) { toast(e.message); }
+}
 function createGroup() {
   showModal('发起群聊', `<p class="hint">选择要邀请的伙伴，可以一次选择多位 Agent。</p><label class="field">群聊名称<input name="title" placeholder="例如：产品灵感小组" maxlength="60"></label><div class="picker">${state.agents.map((agent) => `<label class="pick-row">${avatar(agent)}<span>${escapeHtml(agent.label)}<small>${escapeHtml(agent.backend)} · ${escapeHtml(agent.modelName || agent.model || "后端默认")}</small></span><input type="checkbox" name="agentIds" value="${agent.id}" aria-label="选择 ${escapeHtml(agent.label)}"></label>`).join('') || '<p class="hint">还没有 Agent，请先点击左侧 ＋ 添加。</p>'}</div><p class="hint" id="selected-count">已选择 0 位 · 至少选择 2 位 Agent</p>`, async (form) => {
     const data = new FormData(form);
@@ -152,32 +199,88 @@ function createGroup() {
 }
 async function memberEffort(agentId, roomId) {
   const agent = state.agents.find(a => a.id === agentId);
-  showModal('成员推理设置', '<p>固定模型：' + escapeHtml(agent.modelName || agent.model || '后端默认') + '</p><p>工作区：' + escapeHtml(agent.workspace || '默认') + '</p><p id="effort-loading">正在读取模型能力…</p>', null);
+  const row = state.conversations.find(r => r.id === roomId);
+  showModal('Agent 设置 · ' + agent.label, '<p>固定模型：' + escapeHtml(agent.modelName || agent.model || '后端默认') + '</p><label class="field">推理强度<select name="effort" disabled><option value="">正在读取…</option></select></label><p class="hint" id="effort-loading"></p><label class="field">工作区文件夹<input name="workspace" required value="' + escapeHtml(agent.workspace) + '"></label><button type="button" id="choose-workspace">选择文件夹…</button><p class="hint">推理强度仅用于当前会话。工作区用于这位 Agent 的所有会话；更改后将使用新的后端会话，历史记录保留，原文件不会搬移或删除。</p>', async form => {
+    const data = new FormData(form);
+    await api('/agents/settings', { id: agentId, room: roomId, workspace: data.get('workspace'), ...(data.has('effort') && data.get('effort') ? { effort: data.get('effort') } : {}) });
+    await refresh(); $('#modal').close(); toast('设置已保存');
+  }, '保存设置');
+  const select = $('#modal-content [name="effort"]');
+  $('#choose-workspace').hidden = !state.canChooseWorkspace;
+  $('#choose-workspace').onclick = async () => { try { const result = await api('/workspace/browse', {}); if (result.path && select.isConnected) $('#modal-content [name="workspace"]').value = result.path; } catch(e) { toast(e.message); } };
   try {
     const data = await api('/models', { backend: agent.backend, model: agent.model });
-    if (!$('#effort-loading')) return;
+    if (!select.isConnected) return;
     const model = data.models.find(m => m.id === agent.model);
-    if (!model?.efforts.length) { $('#effort-loading').textContent = '后端未提供可调整的推理档位。'; return; }
-    showModal('成员推理设置', '<p>固定模型：' + escapeHtml(agent.modelName || agent.model) + '</p><p>工作区：' + escapeHtml(agent.workspace || '默认') + '</p><label class="field">推理强度<select name="effort">' + model.efforts.map(e => '<option value="' + escapeHtml(e) + '">' + escapeHtml(e) + '</option>').join('') + '</select></label><p class="hint">仅影响当前会话中的这位 Agent，从下一条回复生效。</p>', async form => {
-      await api('/member-effort', { room: roomId, agent: agentId, effort: new FormData(form).get('effort') });
-      await refresh(); $('#modal').close(); toast('推理强度已保存');
-    }, '保存设置');
-    const row = state.conversations.find(r => r.id === roomId);
-    $('#modal-content [name="effort"]').value = row.efforts?.[agentId] || agent.effort || model.defaultEffort || model.efforts[0];
-  } catch(error) { if ($('#effort-loading')) $('#effort-loading').textContent = error.message; }
+    const efforts = model?.efforts || [];
+    select.innerHTML = efforts.length ? efforts.map(e => '<option value="' + escapeHtml(e) + '">' + escapeHtml(e) + '</option>').join('') : '<option value="">后端默认</option>';
+    select.disabled = !efforts.length;
+    if (efforts.length) select.value = row.efforts?.[agentId] || agent.effort || model.defaultEffort || efforts[0];
+    $('#effort-loading').textContent = efforts.length ? '' : '后端未提供可调整的推理档位，仍可修改工作区。';
+  } catch(e) { if (select.isConnected) { select.innerHTML = '<option value="">保持原设置</option>'; $('#effort-loading').textContent = '推理档位读取失败：' + e.message + '。仍可修改工作区。'; } }
 }
 function showMembers(mention = false) {
-  const row = state.conversations.find((c) => c.id === state.current); if (!row) return;
-  showModal(mention ? '提及 Agent' : '会话成员', `<div class="picker">${row.agentIds.map((id) => { const agent = state.agents.find((a) => a.id === id); const status = state.snapshot?.members.find((m) => m.id === id); return `<button type="button" class="pick-row" data-mention="${agent.id}">${avatar(agent)}<span>${escapeHtml(agent.label)}<small>${escapeHtml(agent.backend)} · ${escapeHtml(status?.error || (status?.status === 'running' ? '正在回复' : '点击提及'))}</small></span></button>`; }).join('')}</div><p class="hint">群聊记录对所有成员可见，各会话上下文互相独立。</p>`, null);
-  if (!mention) {
-    for (const id of row.agentIds) {
-      const agent = state.agents.find(a => a.id === id);
-      if (!agent.modelLocked) continue;
-      const button = document.createElement('button'); button.type = 'button'; button.textContent = agent.label + ' · 推理设置';
-      button.onclick = () => void memberEffort(id, row.id); $('#modal-content').append(button);
-    }
-  }
-  $('#modal-content').onclick = (event) => { const button = event.target.closest('[data-mention]'); if (!button) return; const agent = state.agents.find((a) => a.id === button.dataset.mention); $('#draft').value += '@' + agent.label + ' '; state.drafts[state.current] = $('#draft').value; $('#modal').close(); $('#draft').focus(); };
+  const row = state.conversations.find(c => c.id === state.current); if (!row) return;
+  if (!mention && row.agentIds.length === 1) { void memberEffort(row.agentIds[0], row.id); return; }
+  showModal(mention ? '提及 Agent' : '会话设置', '<div class="picker">' + row.agentIds.map(id => {
+    const agent = state.agents.find(a => a.id === id);
+    return '<button type="button" class="pick-row" data-member="' + id + '">' + avatar(agent) + '<span>' + escapeHtml(agent.label) + '<small>' + (mention ? '点击提及' : '修改推理强度和工作区') + '</small></span></button>';
+  }).join('') + '</div>', null);
+  if (mention && row.kind === 'group' && row.agentIds.length) $('#modal-content .picker').insertAdjacentHTML('afterbegin', '<button type="button" class="pick-row" data-member="__all__"><span class="avatar group">☷</span><span>所有人<small>提及当前群聊的全部成员</small></span></button>');
+  $('#modal-content').onclick = event => {
+    const button = event.target.closest('[data-member]'); if (!button) return;
+    const agent = button.dataset.member === '__all__' ? { label: '所有人' } : state.agents.find(a => a.id === button.dataset.member);
+    if (!mention) { $('#modal-content').onclick = null; void memberEffort(agent.id, row.id); return; }
+    $('#draft').value += '@' + agent.label + ' '; state.drafts[state.current] = $('#draft').value; $('#modal').close(); $('#draft').focus();
+  };
+}
+function renameConversation(row, agent) {
+  showModal(agent ? '重命名 Agent' : '重命名群聊', '<label class="field">名称<input name="label" required maxlength="' + (agent ? 40 : 60) + '" value="' + escapeHtml(agent?.label || row.title) + '"></label><p class="hint">' + (agent ? '工作区目录保持不变，之后点名请使用新名称。' : '只修改群聊名称，成员和历史记录保持不变。') + '</p>', async form => {
+    await api('/conversation/rename', { id: row.id, name: new FormData(form).get('label') });
+    await refresh();
+    const current = state.conversations.find(c => c.id === state.current); if (current) $('#chat-title').textContent = current.title;
+    $('#modal').close(); toast('名称已修改');
+  }, '保存名称');
+}
+function closeAgentMenu() { $('#agent-context-menu')?.remove(); }
+$('#conversations').addEventListener('contextmenu', event => {
+  closeAgentMenu();
+  const button = event.target.closest('[data-room]');
+  const row = state.conversations.find(c => c.id === button?.dataset.room);
+  if (!row) return;
+  event.preventDefault();
+  const agent = row.kind === 'direct' ? state.agents.find(a => a.id === row.agentIds[0]) : null; if (row.kind === 'direct' && !agent) return;
+  const menu = document.createElement('div'); menu.id = 'agent-context-menu'; menu.setAttribute('role', 'menu');
+  menu.innerHTML = '<button role="menuitem" data-action="pin">' + (row.pinned ? '取消置顶' : '置顶') + '</button><button role="menuitem" data-action="delete">删除</button>';
+  if (row.kind === 'group') menu.innerHTML = '';
+  menu.insertAdjacentHTML('afterbegin', '<button role="menuitem" data-action="rename">重命名</button>');
+  document.body.append(menu);
+  menu.style.left = Math.max(0, Math.min(event.clientX, innerWidth - menu.offsetWidth - 8)) + 'px';
+  menu.style.top = Math.max(0, Math.min(event.clientY, innerHeight - menu.offsetHeight - 8)) + 'px';
+  menu.onclick = async e => {
+    const action = e.target.closest('[data-action]')?.dataset.action; if (!action) return;
+    closeAgentMenu();
+    if (action === 'rename') { renameConversation(row, agent); return; }
+    if (action === 'delete') { deleteAgent(agent); return; }
+    try { await api('/conversation/pin', { id: row.id, pinned: !row.pinned }); await refresh(); } catch(e) { toast(e.message); }
+  };
+  menu.addEventListener('keydown', e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const buttons = [...menu.querySelectorAll('button')]; buttons[(buttons.indexOf(document.activeElement) + 1) % buttons.length].focus(); } });
+  menu.querySelector('button').focus();
+});
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#agent-context-menu')) closeAgentMenu(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAgentMenu(); });
+window.addEventListener('resize', closeAgentMenu);
+document.addEventListener('wheel', closeAgentMenu, { passive: true });
+function deleteAgent(agent) {
+  showModal('删除 Agent：' + agent.label, '<p>将从联系人和所有群聊中移除这位 Agent。群聊历史及原后端中的对话仍保留。</p><p>工作区：<code>' + escapeHtml(agent.workspace) + '</code></p><label class="field">工作区处理<select name="deleteWorkspace"><option value="false">保留文件夹和文件（默认）</option><option value="true">同时永久删除工作区及全部文件</option></select></label><label class="field" id="delete-path-field" hidden>确认删除时，请输入上面的完整路径<input name="confirmWorkspace" autocomplete="off"></label>', async form => {
+    const data = new FormData(form);
+    const result = await api('/agents/delete', { id: agent.id, deleteWorkspace: data.get('deleteWorkspace') === 'true', confirmWorkspace: data.get('confirmWorkspace') });
+    $('#modal').close(); await refresh();
+    if (state.conversations.some(c => c.id === state.current)) await openConversation(state.current);
+    else { state.current = null; state.snapshot = null; localStorage.removeItem('agent-room:selected'); $('#conversation-view').hidden = true; $('#welcome').hidden = false; }
+    toast(result.warning || 'Agent 已删除');
+  }, '确认删除');
+  $('#modal-content [name="deleteWorkspace"]').onchange = event => { const remove = event.target.value === 'true'; $('#delete-path-field').hidden = !remove; $('#modal-content [name="confirmWorkspace"]').required = remove; };
 }
 let themeData;
 function applyTheme(theme) {
@@ -209,12 +312,48 @@ async function uploadFiles(files) {
   } catch (error) { toast(error.message); }
   finally { state.loading--; updateActivity(); }
 }
+let mentionState = null;
+const mentionPopup = document.createElement('div'); mentionPopup.id = 'mention-suggestions'; mentionPopup.hidden = true; mentionPopup.setAttribute('role', 'listbox'); mentionPopup.setAttribute('aria-label', '提及成员'); $('.composer').append(mentionPopup);
+$('#draft').setAttribute('aria-controls', mentionPopup.id);
+function hideMentions() { mentionState = null; mentionPopup.hidden = true; $('#draft').removeAttribute('aria-activedescendant'); }
+function paintMentions() {
+  mentionPopup.innerHTML = mentionState.agents.map((a, i) => '<button type="button" role="option" id="mention-option-' + i + '" data-index="' + i + '" aria-selected="' + (i === mentionState.index) + '">' + avatar(a) + '<span>' + escapeHtml(a.label) + '</span></button>').join('');
+  mentionPopup.hidden = false; $('#draft').setAttribute('aria-activedescendant', 'mention-option-' + mentionState.index);
+  mentionPopup.children[mentionState.index]?.scrollIntoView({ block: 'nearest' });
+}
+function updateMentions() {
+  const draft = $('#draft'); const caret = draft.selectionStart;
+  if (caret !== draft.selectionEnd) { hideMentions(); return; }
+  const prefix = draft.value.slice(0, caret); const start = prefix.lastIndexOf('@');
+  if (start < 0 || (start > 0 && /[\p{L}\p{N}_]/u.test(prefix[start - 1]))) { hideMentions(); return; }
+  const query = prefix.slice(start + 1);
+  if (/[\r\n]/.test(query)) { hideMentions(); return; }
+  const row = state.conversations.find(c => c.id === state.current);
+  const members = (row?.agentIds || []).map(id => state.agents.find(a => a.id === id)).filter(Boolean);
+  if (row?.kind === 'group' && members.length) members.unshift({ id: '__all__', label: '所有人', backend: 'group' });
+  const agents = members.filter(a => a.label.toLowerCase().includes(query.toLowerCase()));
+  if (!agents.length) { hideMentions(); return; }
+  mentionState = { start, end: caret, agents, index: 0 }; paintMentions();
+}
+function acceptMention(index) {
+  if (!mentionState) return;
+  const draft = $('#draft'); const value = '@' + mentionState.agents[index].label + ' ';
+  const caret = mentionState.start + value.length;
+  draft.value = draft.value.slice(0, mentionState.start) + value + draft.value.slice(mentionState.end);
+  state.drafts[state.current] = draft.value; hideMentions(); draft.focus(); draft.setSelectionRange(caret, caret);
+}
+mentionPopup.onmousedown = e => e.preventDefault();
+mentionPopup.onclick = e => { const button = e.target.closest('[data-index]'); if (button) acceptMention(Number(button.dataset.index)); };
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#mention-suggestions') && e.target !== $('#draft')) hideMentions(); });
+$('#draft').addEventListener('click', updateMentions);
+$('#draft').addEventListener('compositionstart', hideMentions);
+$('#draft').addEventListener('compositionend', updateMentions);
 async function send() {
   const id = state.current; const text = $('#draft').value.trim(); const files = state.uploads[id] || [];
   if ((!text && !files.length) || $('#send').disabled) return;
   state.pending.add(id); updateActivity();
   // Clear immediately so an asynchronous failure can restore the draft safely.
-  $('#draft').value = ''; state.drafts[id] = ''; state.uploads[id] = []; renderAttachments();
+  hideMentions(); $('#draft').value = ''; state.drafts[id] = ''; state.uploads[id] = []; renderAttachments();
   try { await api('/say', { room: id, text, attachments: files.map((f) => f.id) }); }
   catch (error) { state.pending.delete(id); restoreDraft(id, text, files); toast(error.message); }
   finally { updateActivity(); }
@@ -240,8 +379,15 @@ $('#file-input').onchange = (event) => { void uploadFiles([...event.target.files
 $('#attachments').onclick = (event) => { const button = event.target.closest('[data-remove-file]'); if (button) { state.uploads[state.current].splice(Number(button.dataset.removeFile), 1); renderAttachments(); } };
 $('#members').onclick = () => showMembers(); $('#mention').onclick = () => showMembers(true);
 $('#send').onclick = send;
-$('#draft').oninput = () => { state.drafts[state.current] = $('#draft').value; };
-$('#draft').onkeydown = (event) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void send(); } };
+$('#draft').oninput = e => { state.drafts[state.current] = $('#draft').value; if (!e.isComposing) updateMentions(); };
+$('#draft').onkeydown = (event) => {
+  if (event.isComposing || event.keyCode === 229) return;
+  if (mentionState) {
+    if (event.key === 'Escape') { event.preventDefault(); hideMentions(); return; }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); mentionState.index = (mentionState.index + (event.key === 'ArrowDown' ? 1 : -1) + mentionState.agents.length) % mentionState.agents.length; paintMentions(); return; }
+    if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') { event.preventDefault(); acceptMention(mentionState.index); return; }
+  }
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void send(); } };
 $('#draft').onpaste = (event) => { if (event.clipboardData.files.length) { event.preventDefault(); void uploadFiles([...event.clipboardData.files]); } };
 $('#chat').ondragover = (event) => { event.preventDefault(); $('#chat').classList.add('dragging'); };
 $('#chat').ondragleave = () => $('#chat').classList.remove('dragging');
@@ -256,7 +402,7 @@ events.onerror = () => { $('#connection').className = ''; $('#connection').inner
 events.onmessage = (message) => {
   const data = JSON.parse(message.data);
   if (data.type === 'catalog') { state.agents = data.catalog.agents; state.conversations = data.catalog.conversations; renderList(); }
-  if (data.type === 'snapshot' && data.room === state.current) { state.snapshot = data.snapshot; renderMessages(); }
+  if (data.type === 'snapshot' && data.room === state.current) { state.snapshot = data.snapshot; scheduleMessages(true); }
   if (data.type === 'message' && data.room !== state.current) { state.unread.add(data.room); renderList(); }
   if (data.type === 'pending') { if (data.pending) state.pending.add(data.room); else state.pending.delete(data.room); updateActivity(); }
   if (data.type === 'failure') { restoreDraft(data.room, data.text, data.attachments); toast('发送失败，内容已恢复到草稿：' + data.error); }
@@ -265,7 +411,7 @@ events.onmessage = (message) => {
     if (event.type === 'agent-start') state.live.set(event.liveId, { room: data.room, memberId: event.memberId, text: '' });
     if (event.type === 'delta') { const live = state.live.get(event.liveId); if (live) live.text += event.delta; }
     if (event.type === 'agent-end') { state.live.delete(event.liveId); if (event.error) toast('Agent 回复失败：' + event.error); }
-    if (data.room === state.current) renderMessages();
+    if (data.room === state.current) scheduleMessages();
   }
 };
-(async () => { try { await refresh(); applyTheme((await api('/theme')).theme); const id = localStorage.getItem('agent-room:selected'); if (state.conversations.some((row) => row.id === id)) await openConversation(id); } catch (error) { toast(error.message); } })();
+(async () => { try { const location = await api('/data-location'); if (location.warning) toast(location.warning); await refresh(); applyTheme((await api('/theme')).theme); const id = localStorage.getItem('agent-room:selected'); if (state.conversations.some((row) => row.id === id)) await openConversation(id); } catch (error) { toast(error.message); } })();

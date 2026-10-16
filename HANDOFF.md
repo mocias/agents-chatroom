@@ -1,6 +1,14 @@
 # Agents Chatroom — Handoff
 
-交接日期：2026-10-16。源码版本 0.1.7，新仓库 agents-chatroom。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
+交接日期：2026-10-16。源码版本 0.1.9，新仓库 agents-chatroom。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
+
+0.1.8 更新：默认工作区改为桌面安装目录/agents/backend/Agent名称；浏览器默认源码根/agents，支持 AGENT_ROOM_WORKSPACE_ROOT；旧路径不迁移。添加删除操作，默认保留文件，删除文件需完整路径确认，禁止共用/嵌套工作区、磁盘根、应用数据祖先、符号链接/联接。删除联系人移除单聊入口与群成员，保留群聊记录、底层日志和原后端记录。安装包构建不等于用户已安装版本更新。
+
+同步未完成：standalone/desktop-sync.cjs 使用新版 project/create + thread/start.projectId，为每个 Agent 创建稳定项目，不采用原来的项目轮换删除。真实两次 SYNC_OK 已验证后端持久化关联，但 Codex 桌面 list_projects 没有显示新项目；本机桌面还维护 local-projects 缓存，不能宣称 GUI 可见。DSH workspaceRegistry 在桌面宿主；Qoder 的 chat_sessions / sidebar / messages 与 ACP 存储分离，目前返回 unsupported。不要绕过接口直接覆盖运行中应用的状态文件或数据库。下一步必须接通各宿主的受支持注册/导入接口并做 GUI 验收。
+
+提示词精确结构见 docs/PROMPTS.md。创建 Agent/群聊无生成请求，首次消息才打开会话。新增 checks/desktop-sync.test.cjs、删除目录检查；真实脚本 scripts/check-native-codex.cjs 只证明后端关联，不证明桌面可见。
+
+0.1.8 初始阶段验证：26/26 回归；打包 smoke `output/desktop-smoke-exb3Jx/report.json`；默认 EXE 同级 agents 根 `output/default-root-tDy4F6/report.json`；NSIS 保留宏隔离执行 `output/installer-preserve-lRIIFE/report.json`；DSH/Qoder 角色指令真实回复 `output/persona-live-J3wtcF/report.json`。宏位于 desktop/preserve-agents.nsh，升级/卸载保留 agents，不能退回默认递归删除安装目录。详细证据边界见 DESKTOP_VALIDATION.md。
 
 ## 1. 产品目标与接手任务
 
@@ -33,7 +41,7 @@ Agent 字段：id、label、backend、model、modelLocked、modelName、effort�
 
 Conversation 字段：id、kind、title、agentIds、updatedAt、preview，可含 efforts[agentId]。推理覆盖只作用于当前会话；群内不提供模型修改。后端模型不可用或拒绝应用时应报错，不静默切换。Qoder auto 是策略，不是固定具体模型。
 
-workspace 自定义目录须存在；留空创建 workspaces/backend/Agent名称。非法字符/保留名/冲突由工具函数处理。新房间创建独立后端会话，但同一 Agent 使用同一 cwd。旧 Agent 保存原共用路径，不搬文件。
+workspace 自定义目录须存在；留空创建 agents/backend/Agent名称。非法字符/保留名/冲突由工具函数处理。新房间创建独立后端会话，但同一 Agent 使用同一 cwd。旧 Agent 保存原路径，不搬文件。
 
 Codex 自动选择优先运行中的桌面托管后端，其次其他桌面入口，最后 npm/PATH；手动指定优先。DSH 通过自身 EXE + ASAR CLI + acp profile 启动，并使用已有账户路由补丁。Qoder 使用已安装产品附带的 Worker，不重新分发运行时。
 
@@ -91,7 +99,7 @@ npm run desktop:smoke
 1. 原插件的发现/UI/roster 序列化/宿主归档尚未完整接入；详细修改点见用户另行提供的本地移植指南。
 2. 本地历史恢复不等于原生 session ID 恢复。runtime 闲置释放或进程重启后可能新建后端会话并重放历史。跨重启 session resume 仍需专门实现与测试。
 3. ACP 附件主要传本地路径。即使 Qoder 宣告图片能力，也未接原生 ACP 图片块；Codex 使用原生图片输入。
-4. 暂无 Agent 编辑/删除、群成员增删、已有 workspace 迁移、跨设备同步、WORK UI、代码签名和自动升级。
+4. 暂无 Agent 编辑、单独增删群成员、已有 workspace 迁移、跨设备同步、WORK UI、代码签名和自动升级。0.1.8 已添加全局删除 Agent。
 5. 发现入口不等于账号/网络可用。模型查询会启动后端，ACP 可能创建能力查询会话。
 6. Qoder 内部布局随升级可能变化。本次实测 CN 0.4.8，不能泛称所有版本都支持；国际版识别只是候选逻辑。
 7. 模型查询目前使用后端默认工作目录，没有按 Agent 自定义 workspace 枚举项目级提供商配置；未来应把 cwd 纳入查询及缓存键。
@@ -114,3 +122,37 @@ npm run desktop:smoke
 - handoff：持续记录已实现、已测试、待验证，不把历史测试冒充当前结果。
 
 用户习惯：完成授权范围内的实际工作；不要把构建宣称为已安装版本升级；未经明确要求不要删除后端旧版本或移动工作区。
+
+## 2026-10-16 界面与点名修复
+
+- 单聊成员按钮直接打开 Agent 设置，可改工作区及当前会话推理强度；群聊先选择成员。固定模型只读。
+- 工作区修改作用于该 Agent 所有会话；等待相关回复结束，释放旧运行会话并保留历史与原文件，不自动迁移文件。
+- 左侧 Agent 右键菜单提供置顶/取消置顶与删除；置顶持久化，删除继续使用工作区保留/删除确认。
+- 身份指令、发言人标签、每轮成员名册改用显示名；点名匹配支持小数点、空格、中文，旧内部 ID 仍兼容解析。历史正文不改写。
+- 回归 28/28 通过；打包桌面实测 12 项通过，证据 output/desktop-smoke-4mkvqt/report.json。原桌面同步仍未完成。
+
+## 2026-10-16 滚动、输入提及和重命名
+
+- 页面锁定为窗口高度，消息区和联系人列表分别滚动；头部、输入框、左侧底部操作固定。
+- 输入 @ 弹出当前会话成员，按显示名筛选，支持方向键、Enter/Tab、鼠标选择与 Escape；候选存在时 Enter 不发送。
+- Agent 和群聊右键菜单增加重命名。Agent 重名被拒绝；名称更新到单聊及提及候选，工作区路径保持原值。历史正文不改写；Agent 改名等待相关回复结束并释放旧运行会话，下次回复使用新身份。
+- npm test 29/29；最终打包程序交互检查 output/composer-ui-3RNEFD/report.json 通过（长列表/历史采用隔离测试数据，不调用模型）。
+- 桌面数据：%APPDATA%/Agent Room/data/catalog.json 保存联系人和会话索引，rooms/*.log.jsonl 保存历史，agent-room-files 保存已上传附件（使用后创建）。卸载默认保留用户数据及安装目录 agents；浏览器数据独立在源码 .agent-room-data（可由环境变量覆盖）。
+
+## 2026-10-16 用户自定义数据目录
+
+用户明确选择手动迁移。后端管理新增数据目录入口，保存 pending，下次启动校验手动复制结果后激活；不复制或删除源数据。可取消 pending，失败继续使用旧目录。桌面定位文件保存在 userData/data-location.json（位于 data 外）；浏览器在源码根 .agent-room-location.json（gitignored）。有已保存选择时优先该设置，AGENT_ROOM_DATA 作为浏览器初始默认值。
+
+启动时核对源目录普通文件哈希与目标副本，缺失/不同拒绝切换。源目录已不存在时仍要求目标 catalog.json 与 rooms 有效。历史附件重新绑定当前附件目录；workspace 的绝对路径不自动迁移。桌面菜单打开当前生效的数据目录。旧目录保留，不修改用户工作区文件。
+
+验证：npm test 32/32；打包桌面检查 output/data-location-ui-1Q2MWm/report.json 通过，涵盖 UI 保存、未复制时回退、完整手动复制后重启激活与 Agent 保留。
+
+## 0.1.9 性能与群体提及
+
+群聊输入 @ 候选和工具栏提及弹窗都支持“所有人”，仅路由给当前群聊成员，仍受现有接力轮次上限控制。parseMentions 同时兼容 @all、@全体。
+
+流式 delta 不再重建历史 DOM：requestAnimationFrame 合并同帧更新，仅更新当前输出气泡；持久化快照仍刷新完整历史，未做历史分页或虚拟列表。scripts/benchmark-render.cjs 的 500 条历史 + 200 次同步 delta 合成对照：旧版 dispatch 6533.4 ms / 总计 6578.3 ms，新版 dispatch 0.2 ms / 总计 58.4 ms，历史节点保留且最终文本完整。此结果不代表真实网络/模型生成加速。
+
+打包使用 maximum 压缩，Electron locale 保留 en-US、zh-CN、zh-TW。Windows 安装包由 111232183 降至 102699065 字节，减少约 7.7%；不裁剪 Chromium 核心、GPU 库或许可证。业务 app.asar 约 0.46 MB，体积主要来自 Electron。
+
+33/33 回归；最终优化版桌面核心验收 output/desktop-smoke-CWhsSh/report.json 12 项通过；@所有人 两入口验收 output/composer-ui-uu7WUT/report.json。基准证据 output/render-benchmark-79Jfcj/report.json 和 output/render-benchmark-p4GH7n/report.json。输出报告本地忽略，脚本随源码提供。桌面原生项目同步仍未完成。
