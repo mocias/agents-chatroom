@@ -39,6 +39,7 @@ npm run desktop:dist
 MIT 许可证，保留上游归属。包名与插件入口继续使用 `dsh-agent-room`，以保留 DSH 插件兼容性；仓库名为 `agents-chatroom`。
 
 原桌面端同步尚未完整实现：Codex 后端项目创建和会话关联已接入，但当前桌面 UI 的项目列表仍有独立状态；DSH/Qoder 桌面注册尚未接通。同步接口返回具体状态，不宣称全部同步成功。工作区根可用 `AGENT_ROOM_WORKSPACE_ROOT` 覆盖；安装目录不可写时需指定已有可写目录。
+重启agent harness后可以看到此前生成的对话
 
 ## 自定义数据目录（手动迁移）
 
