@@ -30,7 +30,6 @@ npm run desktop:dist
 ## 文档
 
 - [详细交接与架构](HANDOFF.md)
-- [给 DSH：Qoder 接入与工作区移植指南](docs/DSH_PLUGIN_PORTING.md)
 - [产品范围](PRODUCT.md) / [验证记录](DESKTOP_VALIDATION.md)
 - [原插件 README](docs/UPSTREAM_README.md) / [原交接记录](docs/UPSTREAM_HANDOFF.md)
 
