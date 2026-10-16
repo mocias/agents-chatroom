@@ -9,6 +9,9 @@ agent-room-theme/
 agent-room-workspace/
 
 node_modules/
+.agent-room-data/
+output/
+dist/
 pnpm-lock.yaml
 
 # Development-only material, deliberately not part of the published plugin.

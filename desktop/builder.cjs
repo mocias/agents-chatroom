@@ -1,0 +1,28 @@
+'use strict';
+module.exports = {
+  appId: 'com.mocias.agentroom',
+  productName: 'Agent Room',
+  executableName: 'Agent Room',
+  directories: { output: 'dist', buildResources: 'desktop/assets' },
+  extraMetadata: { main: 'desktop/main.cjs' },
+  files: ['desktop/main.cjs', 'desktop/assets/icon.ico', 'standalone/**', 'lib/**', 'package.json', 'LICENSE'],
+  asar: true,
+  electronDist: 'node_modules/electron/dist',
+  npmRebuild: false,
+  win: { target: ['nsis'], icon: 'desktop/assets/icon.ico' },
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowElevation: false,
+    allowToChangeInstallationDirectory: true,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
+    shortcutName: 'Agent Room',
+    uninstallDisplayName: 'Agent Room',
+    deleteAppDataOnUninstall: false,
+    runAfterFinish: true,
+    installerLanguages: ['zh_CN', 'en_US'],
+    language: '2052',
+    artifactName: 'Agent-Room-Setup-${version}-${arch}.${ext}',
+  },
+};

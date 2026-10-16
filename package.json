@@ -1,9 +1,18 @@
 {
   "name": "dsh-agent-room",
-  "version": "0.1.0",
+  "version": "0.1.7",
   "private": true,
-  "description": "Right-sidebar group chat for DeepSeek Harness: several external AI agents share one public room log and can be addressed with @.",
+  "description": "Agent Room — a local desktop app for chatting with AI agents, together or one to one.",
+  "author": "mocias",
   "type": "module",
+  "scripts": {
+    "start": "node standalone/server.cjs",
+    "test": "node --test checks/*.test.cjs",
+    "desktop": "electron desktop/main.cjs",
+    "desktop:pack": "electron-builder --config desktop/builder.cjs --win --x64 --dir",
+    "desktop:dist": "electron-builder --config desktop/builder.cjs --win nsis --x64",
+    "desktop:smoke": "node scripts/smoke-desktop.cjs"
+  },
   "main": "lib/index.js",
   "license": "MIT",
   "exports": {
@@ -15,6 +24,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "standalone",
     "lib",
     "public",
     "cordis.patch.yml",
@@ -34,5 +44,10 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3",
+    "playwright-core": "1.64.1"
   }
 }

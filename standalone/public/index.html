@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Room · 一起聊聊</title><link rel="stylesheet" href="/app.css"><script defer src="/app.js"></script></head>
+<body>
+<main class="shell">
+  <aside class="sidebar">
+    <header class="brand"><span class="brand-icon">a</span><div><strong>Agent Room</strong><small>你的 AI 伙伴，都在这里</small></div></header>
+    <div class="search-row"><label class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索 Agent 或群聊" aria-label="搜索 Agent 或群聊"></label><button id="add-agent" class="square" title="添加 Agent" aria-label="添加 Agent">＋</button></div>
+    <div class="list-heading"><div class="tabs"><button class="selected" data-filter="all">全部</button><button data-filter="direct">Agents</button><button data-filter="group">群聊</button></div><button id="new-group" class="text-button" title="创建群聊">发起群聊</button></div>
+    <nav id="conversations" aria-label="会话列表"></nav>
+    <footer class="sidebar-footer"><span id="connection"><i></i>正在连接</span><button id="backends" class="text-button">后端管理</button><button id="settings" class="text-button">⚙ 外观设置</button></footer>
+  </aside>
+  <section class="chat" id="chat">
+    <div class="welcome" id="welcome"><div class="welcome-mark">a<span>✦</span></div><span class="eyebrow">A LITTLE ROOM FOR BIG IDEAS</span><h1>想法，从一段对话开始。</h1><p>添加你的 AI 伙伴，单独聊聊，<br>或把大家拉进一个房间，一起碰撞灵感。</p><button id="welcome-add" class="primary">＋ 添加第一个 Agent</button><div class="backend-badges"><span>Codex</span><span>DSH</span><span>Qoder</span></div></div>
+    <div id="conversation-view" hidden>
+      <header class="chat-header"><div><h1 id="chat-title"></h1><p id="chat-subtitle"></p></div><div class="header-actions"><span class="chat-tag">CHAT</span><button id="members" class="square" title="查看成员" aria-label="查看成员">☷</button></div></header>
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <section class="composer"><div class="composer-tools"><button id="attach" title="引用文件或图片">＋ <span>文件 / 图片</span></button><button id="mention" title="提及 Agent">@ <span>提及</span></button><span id="activity"></span><button id="stop" hidden>停止回复</button></div><div id="attachments" class="attachments"></div><textarea id="draft" placeholder="发条消息，聊聊你的想法…" aria-label="消息内容"></textarea><footer><span>Enter 发送 · Shift + Enter 换行</span><button id="send" class="primary">发送 <span>↗</span></button></footer></section>
+    </div>
+  </section>
+</main>
+<input id="file-input" type="file" multiple hidden>
+<dialog id="modal"><form id="modal-form"><header><h2 id="modal-title"></h2><button type="button" id="close-modal" class="square" aria-label="关闭弹窗">×</button></header><div id="modal-content"></div><p id="modal-error" role="alert"></p><footer id="modal-footer"><button type="button" id="cancel-modal">取消</button><button id="modal-submit" class="primary" type="submit">确定</button></footer></form></dialog>
+<div id="toast" role="status" hidden></div>
+</body></html>

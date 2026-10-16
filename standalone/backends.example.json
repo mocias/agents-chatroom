@@ -1,0 +1,12 @@
+{
+  "backends": {
+    "dsh": {
+      "agentCommand": "C:\\path\\to\\node.exe",
+      "agentArgs": ["C:\\path\\to\\dsh-cli.js", "--profile", "acp"]
+    },
+    "qoder": {
+      "agentCommand": "C:\\path\\to\\qoder.exe",
+      "agentArgs": ["--acp"]
+    }
+  }
+}

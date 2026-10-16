@@ -1,41 +1,37 @@
-# dsh-agent-room
+# Agents Chatroom
 
-`dsh-agent-room` 是 **DeepSeek Harness（DSH）** 的一个插件：它在 DSH 右侧栏加一个
-「Agent 群聊」tab —— 把几个 AI agent harness 放进**同一个公共房间**，让它们在你眼前互相聊天。
+本地多 Agent 聊天应用，基于 [dsh-agent-room](https://github.com/mocias/dsh-agent-room) 开发。支持 Codex、DSH、Qoder 单聊与群聊，提供浏览器和 Windows 桌面版。当前版本 **0.1.7**。
 
-## 它是什么
+- 微信式联系人和群聊界面，目前只开放 CHAT。
+- 真实模型列表、固定 Agent 模型、按会话调整推理档位（取决于后端能力）。
+- Agent 独立工作区，默认 `workspaces/后端名称/Agent名称`。
+- 扫描前告知，可拒绝扫描并手动配置。
+- 文件、图片附件及外观设置，数据保存在本机。
 
-- **一个房间，多个 harness。** codex、DSH 自己、Qoder 都能坐进同一间房，各自持有后端与工作目录。
-- **公开群聊。** 房间日志对所有成员公开，你说的话所有成员都读得到。`@名字` 是**即时投递 + 强调**，不是私聊。
-- **CHAT / WORK 两种模式。** CHAT 偏短回答、限制工具；WORK 放开工具、要交付物。
-- **成员在 UI 里增删**，并挑选它的后端与模型；房间状态落盘，能活过一次 DSH 重启。
-- **支持上传文件 / 图片**，图片以真实路径交给成员。
-- **房间主题可自定义**（颜色 + 背景图），在房间面板或 DSH「设置 → 通用 → Agent 群聊外观」里改。
-- **自动探测本机 harness**，结果可在「设置 → 通用 → Agent 群聊可用后端」里查看和调整。
+## 启动
 
-## 安装
+需要 Node.js 22+；浏览器版没有额外运行依赖：
 
-用 DSH 的**插件管理器**安装（不要手写 profile 的 `package.json` / `cordis.patch.yml`）：
-
-```
-plugin_manager(action: "install_bundle", target: "<本仓库绝对路径>")
+```sh
+npm start
 ```
 
-装完若右栏没出现 tab，刷新一次页面。
+打开 http://127.0.0.1:4318 。后端需分别安装并登录。
 
-**codex 后端开箱可用**（前提是本机已装好并登录 codex CLI）。其他 harness 只要探测得到就
-不需要配置：DSH 桌面端用自带的 `acp` profile 起一个自己，Qoder 走 `qoder --acp`。
-探测不到、或想指定启动命令时才写配置：
-
-```yaml
-backends:
-  qoder:                        # harness 名，即添加成员时的选项
-    agentCommand: <启动命令>
-    agentArgs: <命令行参数>
+```sh
+npm ci
+npm test
+npm run desktop
+npm run desktop:dist
 ```
 
-配置里写了哪一项，哪一项就说了算；没写的部分由自动探测补上。
+桌面构建面向 Windows x64，产物在 `dist/`。安装包未签名，尚无自动升级；用户数据及构建产物不随源码上传。首次安装开发依赖需要下载 Electron。
 
-## 许可
+## 文档
 
-MIT
+- [详细交接与架构](HANDOFF.md)
+- [给 DSH：Qoder 接入与工作区移植指南](docs/DSH_PLUGIN_PORTING.md)
+- [产品范围](PRODUCT.md) / [验证记录](DESKTOP_VALIDATION.md)
+- [原插件 README](docs/UPSTREAM_README.md) / [原交接记录](docs/UPSTREAM_HANDOFF.md)
+
+MIT 许可证，保留上游归属。包名与插件入口继续使用 `dsh-agent-room`，以保留 DSH 插件兼容性；仓库名为 `agents-chatroom`。
