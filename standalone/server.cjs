@@ -39,7 +39,7 @@ function createApplication(options = {}) {
   const syncingAgents = new Set();
   const modelCache = new Map();
   async function modelsFor(id, model, refresh = false) {
-    if (!['codex', 'dsh', 'qoder'].includes(id)) throw new Error('该后端尚未接入模型查询');
+    if (!harnessIds().includes(id)) throw new Error('该后端尚未接入模型查询');
     const key = JSON.stringify([id, model || null]);
     const cached = modelCache.get(key);
     if (!refresh && cached && Date.now() - cached.at < 300000) return cached.value;
@@ -178,6 +178,12 @@ function createApplication(options = {}) {
         const body = await readJsonBody(req);
         return sendJson(res, 200, await modelsFor(body.backend, body.model, Boolean(body.refresh)));
       }
+      if (req.method === 'GET' && route === '/api/backend-login') {
+        throw new Error('群聊复用 WorkBuddy 桌面现有登录，请在桌面应用中管理登录');
+      }
+      if (req.method === 'POST' && route === '/api/backend-login') {
+        throw new Error('群聊复用 WorkBuddy 桌面现有登录，请在桌面应用中管理登录');
+      }
       if (req.method === 'POST' && route === '/api/workspace/browse') {
         if (!options.chooseWorkspaceDirectory) throw new Error('浏览器版请填写文件夹的完整路径');
         return sendJson(res, 200, { path: await options.chooseWorkspaceDirectory() });
@@ -228,7 +234,8 @@ function createApplication(options = {}) {
         for (const state of runtimes.values()) if (state.pending || state.room.snapshot().busy.length) throw new Error('有 Agent 正在回复，请等待结束后再修改后端');
         configuring = true;
         try {
-          const rows = await discovery.save(body.id, body.automatic ? null : { path: body.path, ...(body.args === undefined ? {} : { args: body.args }) });
+          const rows = await discovery.save(body.id, body.automatic ? null : { path: body.path,
+            ...(body.args === undefined ? {} : { args: body.args }), ...(body.proxy === undefined ? {} : { proxy: body.proxy }) });
           modelCache.clear();
           for (const [id, state] of runtimes) {
             if (!state.room.members.some((m) => m.backend === body.id)) continue;
@@ -260,7 +267,7 @@ function createApplication(options = {}) {
         if (catalog.agents.some((a) => a.label.toLowerCase() === label.toLowerCase())) throw new Error('Agent 名称已存在');
         if (!harnessIds().includes(body.backend)) throw new Error('不支持的后端');
         let chosen;
-        if (body.model && ['codex', 'dsh', 'qoder'].includes(body.backend)) {
+        if (body.model && harnessIds().includes(body.backend)) {
           const capabilities = await modelsFor(body.backend, body.model);
           chosen = capabilities.models.find(m => m.id === body.model);
           if (!chosen) throw new Error('请选择后端返回的有效模型');

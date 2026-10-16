@@ -208,7 +208,9 @@ ACP harness 权威注册表：<https://cdn.agentclientprotocol.com/registry/v1/l
 
 注意：`@zed-industries/claude-code-acp` 已**弃用**，现行是 `@agentclientprotocol/claude-agent-acp`。
 
-### 6.3 WorkBuddy：实证否定
+### 6.3 WorkBuddy：旧版检查记录
+
+**已由本项目 0.1.10 的本机实测修正；只实测过 WorkBuddy AI 国际版 5.8.4，国内版没有实测。** 以下仅描述旧版 CLI 的历史检查。国际版可通过已登录桌面的 supervisor 创建带正常凭据引导的 ACP HTTP 运行时，已获得真实 API 回复，无需重新登录。群成员使用各自独立运行时；国内版在另一个 Windows 用户下运行，跨用户连接尚未完成，离线模拟测试不能替代国内版实测。完整接入流程及证据见项目根 HANDOFF 的“0.1.10 WorkBuddy 接入流程与实测边界”。
 
 `@workbuddy/cli-vnext` 里 "acp" 出现 **0 次**。接不了，且按用户决定**完全没有出现在代码里**，
 也没有用 codebuddy 顶替。

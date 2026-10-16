@@ -1,6 +1,6 @@
 # Agents Chatroom — Handoff
 
-交接日期：2026-10-16。源码版本 0.1.9，新仓库 agents-chatroom。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
+交接日期：2026-10-16。源码版本 0.1.10，新仓库 agents-chatroom。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
 
 0.1.8 更新：默认工作区改为桌面安装目录/agents/backend/Agent名称；浏览器默认源码根/agents，支持 AGENT_ROOM_WORKSPACE_ROOT；旧路径不迁移。添加删除操作，默认保留文件，删除文件需完整路径确认，禁止共用/嵌套工作区、磁盘根、应用数据祖先、符号链接/联接。删除联系人移除单聊入口与群成员，保留群聊记录、底层日志和原后端记录。安装包构建不等于用户已安装版本更新。
 
@@ -10,9 +10,11 @@
 
 0.1.8 初始阶段验证：26/26 回归；打包 smoke `output/desktop-smoke-exb3Jx/report.json`；默认 EXE 同级 agents 根 `output/default-root-tDy4F6/report.json`；NSIS 保留宏隔离执行 `output/installer-preserve-lRIIFE/report.json`；DSH/Qoder 角色指令真实回复 `output/persona-live-J3wtcF/report.json`。宏位于 desktop/preserve-agents.nsh，升级/卸载保留 agents，不能退回默认递归删除安装目录。详细证据边界见 DESKTOP_VALIDATION.md。
 
+0.1.10 WorkBuddy：通过已登录桌面的 supervisor 创建本机 ACP HTTP 运行时，复用桌面登录，每位群成员使用独立运行时。**当前只实测过 WorkBuddy AI 国际版 5.8.4；WorkBuddy 国内版没有实测。** 国内版仅有后端注册、安装识别和离线测试，不能据此宣称真实接入成功。完整实现流程、复现命令、证据及限制见文末“0.1.10 WorkBuddy 接入流程与实测边界”。
+
 ## 1. 产品目标与接手任务
 
-独立多 Agent 聊天应用，微信式左侧联系人/群聊、右侧对话。Codex、DSH、Qoder 是三类后端，同一类可以添加多位联系人。搜索旁 + 添加 Agent；多选联系人建群。第一版仅 CHAT、附件和外观设置。
+独立多 Agent 聊天应用，微信式左侧联系人/群聊、右侧对话。原有后端为 Codex、DSH、Qoder，0.1.10 新增 WorkBuddy 接入（国际版已实测，国内版未实测）；同一类可以添加多位联系人。搜索旁 + 添加 Agent；多选联系人建群。第一版仅 CHAT、附件和外观设置。
 
 后续用户要交给 DSH，把 Qoder 桌面后端和工作区能力移植回原插件。独立应用已接入，原插件未完整移植。Qoder 接入与工作区移植指南由用户另行提供，作为本地独立文档保存，不纳入本仓库；不要将其中待办描述为已实现。
 
@@ -27,11 +29,13 @@
 | standalone/models.cjs | Codex model/list、DSH/Qoder ACP configOptions 查询 |
 | standalone/workspaces.cjs | 路径校验、默认目录创建、名称冲突处理 |
 | standalone/qoder-worker.cjs | Qoder 内置 Worker 到 ACP 标准输入输出的桥接 |
+| standalone/workbuddy.cjs | WorkBuddy 版本识别、安装包校验和桌面运行时启动配置 |
 | desktop/main.cjs | Electron 窗口、原生选择器、每次启动本地服务访问凭证 |
 | desktop/builder.cjs | Windows x64 NSIS 构建 |
 | lib/room.cjs | 群聊调度、分段投递、CHAT 策略、会话与历史 |
 | lib/codex-pool.cjs | Codex app-server 协议、模型和推理能力 |
 | lib/acp-backend.cjs | ACP 启动、会话、流式回复、取消、配置 |
+| lib/workbuddy-pool.cjs | 复用当前用户 WorkBuddy 桌面登录、独立运行时和 ACP HTTP 传输 |
 | lib/index.js、public/ | 原 DSH 插件入口/UI，非 standalone |
 | checks/、scripts/ | 自动回归和真实/桌面验收工具 |
 
@@ -77,7 +81,7 @@ npm run desktop:dist
 
 详见 [DESKTOP_VALIDATION.md](DESKTOP_VALIDATION.md)。里面 output/ 路径为本机历史报告，不随源码上传；新环境应重新生成，不能要求仓库中一定有这些报告。
 
-- 当前离线/本地接口回归 21/21 通过：扫描许可、持久化、目录规则、模型锁定、推理隔离、附件和群聊。
+- 当前离线/本地接口回归 50/50 通过：扫描许可、持久化、目录规则、模型锁定、推理隔离、附件和群聊。
 - Codex/DSH 真实模型选择，low/high 各一轮回复通过；各创建两个同 cwd、不同 session ID 的会话通过。
 - Qoder CN 0.4.8 内置 Worker 的 initialize、新会话、真实回复通过；打包 Electron 也完成真实回复。官方登录已在原机器完成，不代表新机器无需登录。
 - 当前本机 Qoder 返回 15 个模型，无 thought_level。数量和模型随账户/版本变化。
@@ -156,3 +160,105 @@ npm run desktop:smoke
 打包使用 maximum 压缩，Electron locale 保留 en-US、zh-CN、zh-TW。Windows 安装包由 111232183 降至 102699065 字节，减少约 7.7%；不裁剪 Chromium 核心、GPU 库或许可证。业务 app.asar 约 0.46 MB，体积主要来自 Electron。
 
 33/33 回归；最终优化版桌面核心验收 output/desktop-smoke-CWhsSh/report.json 12 项通过；@所有人 两入口验收 output/composer-ui-uu7WUT/report.json。基准证据 output/render-benchmark-79Jfcj/report.json 和 output/render-benchmark-p4GH7n/report.json。输出报告本地忽略，脚本随源码提供。桌面原生项目同步仍未完成。
+
+## 0.1.10 WorkBuddy 接入流程与实测边界
+
+### 验证范围：只实测国际版，国内版没有实测
+
+| 版本 | 后端标识 | 当前证据 |
+| --- | --- | --- |
+| WorkBuddy AI 国际版 5.8.4 | `workbuddy-ai` | 已在真实安装上验证桌面登录复用、ACP 初始化、模型读取与应用、独立会话、两位群成员真实回复，以及 UI 发送和 @ 提及 |
+| WorkBuddy 国内版 | `workbuddy` | **没有实测。** 仅完成代码中的后端注册、安装识别及离线模拟测试；未完成真实桌面的初始化、登录复用、模型查询或聊天回复验证 |
+
+本机国内版运行在另一个 Windows 用户下。当前连接器只查找当前用户的桌面运行时，尚未实现跨用户 helper/转发。国内版未实测不代表已确认不兼容，也不能把国际版成功推广为国内版成功。`checks/standalone.test.cjs` 中双版本同群测试使用模拟后端，`checks/workbuddy.test.cjs` 的国内版安装识别使用构造的安装目录，均不算国内版实测。
+
+### 接入原理与前提
+
+连接链路为：群聊 → 当前用户 WorkBuddy 桌面的 supervisor 控制管道 → 桌面创建的独立后端进程 → 本机 ACP HTTP/SSE → 群聊回复。
+
+这里的 HTTP/SSE 是群聊与本机 `127.0.0.1` 运行时之间的通信。模型请求仍由 WorkBuddy 后端按其已有账号和网络配置处理；这不表示模型在本地运行。无需另行部署云端 ACP 服务，也无需在群聊中重新登录。
+
+1. 在同一个 Windows 用户下打开对应版本的 WorkBuddy，保持桌面已登录，并先在桌面发送一条消息，以启动桌面的运行时及凭据引导。
+2. 在群聊“后端管理”中保存对应桌面程序的完整路径。此次实测国际版为 `D:\WorkBuddy mocias\WorkBuddyAI.exe`；这是本机路径，其他机器必须重新选择，不能硬编码。
+3. 添加 Agent 时读取后端实际返回的模型列表，选择并固定模型，再加入群聊。创建联系人/群本身不发送生成请求；读取模型会启动能力查询运行时，发送消息才触发实际回复。
+
+### 实现步骤
+
+1. **识别安装包和版本。** `standalone/discovery.cjs` 调用 `standalone/workbuddy.cjs` 的 `desktopLaunch()`，校验程序名及安装目录中的 `resources/app.asar.unpacked/cli/bin/codebuddy`、`cli/product.json`。国际版要求 `product.authentication.id` 为 `workbuddy-desktop-ai`，国内版候选要求 `workbuddy-desktop`，防止两个版本入口混用。启动配置带 `workbuddySupervisor: true`；`lib/room.cjs` 据此选择 `WorkbuddyPool`，`standalone/models.cjs` 也使用同一连接器。
+2. **寻找当前用户的 supervisor。** `connectSupervisor()` 在当前用户主目录的 `.workbuddy-ai`、`.workbuddy` 候选中查找运行时描述文件。国际版本次实际使用 `.workbuddy`，因此不能仅凭配置目录名判断版本。对每个 `path.resolve(configDir)` 计算 SHA-1，取前 12 个十六进制字符作为 `hash`，读取 `os.tmpdir()/wb/<hash>/sidecar.pid`。描述文件包含 PID、控制管道 UUID 和本地控制身份信息；不得把其中的 token 写入日志或交接材料。
+3. **核对桌面身份。** 查询描述文件 PID 对应的可执行文件，必须与用户选择的程序路径一致。连接 Windows 命名管道 `\\.\pipe\workbuddy-<hash>-sidecar-control-<controlPipeUuid>`，使用按行分隔的 JSON-RPC 调用 `sidecar.ping`，核对返回的 PID/token 与描述文件一致。仅连接已有桌面 supervisor，不另建登录流程。
+4. **由桌面创建群聊运行时。** 生成本应用独有的 `agent-room-<UUID>`，向 supervisor 调用 `session.create`，指定已安装桌面 EXE、内置 CLI 入口、现有工作目录和 `port: 0`。supervisor 通过桌面的正常凭据引导把已有授权提供给子进程；群聊不读取/导出账号密钥，不复制账号凭据文件，也不调用 ACP `authenticate`。此前直接启动独立后端、要求单独登录的尝试已被这条流程替代。
+5. **建立带认证的本机 ACP 连接。** 从创建结果取得 `acpEndpoint`、PID、`runtimeId`，仅接受有效的 `http://127.0.0.1:<port>` 地址。先 `POST <endpoint>/connect` 取得 `connectionId` 和可选 `sessionToken`，随后请求携带本应用临时生成的网关认证及 ACP 连接标识。`GET <endpoint>` 订阅 SSE；`POST <endpoint>` 发送 JSON-RPC，并兼容 JSON/SSE 响应。端口由运行时返回，不能复用历史报告里的端口。
+6. **打开会话并传递消息。** 调用 `initialize`，再以每位 Agent 的实际工作区调用 `session/new`，从返回的 `configOptions` 学习模型和推理选项，通过 `session/set_config_option` 应用固定模型。发送使用 `session/prompt`，文本增量来自 `session/update` 的 `agent_message_chunk`，由现有 ACP/群聊逻辑显示并持久化。`session/cancel` 用于取消。
+7. **按成员隔离运行时。** `WorkbuddyPool` 为每个成员分配独立的 `WorkbuddyConnection`，每个连接对应独立后端进程和 ACP 会话。此前共享单个运行时时出现过旧会话无回复/并发卡住；每成员独立运行时是当前已验证的方案。启动进程使用已有的房间数据目录，具体会话仍使用成员工作区，避免新后端缺少旧版默认目录导致启动失败。
+8. **清理本应用创建的资源。** 关闭时中断 SSE、拒绝未完成请求、尝试 `DELETE <endpoint>` 关闭连接，并向 supervisor 调用 `session.kill`，只传本应用生成的 `sessionId` 及已返回的 `expectedRuntimeId`。不关闭 supervisor，不结束桌面原有任务，不调用 `sidecar.shutdown`。
+
+### 启动配置与权限
+
+由 supervisor 启动桌面 EXE 时设置 `ELECTRON_RUN_AS_NODE=1`，执行其安装包中的 CLI，主要参数为：
+
+```text
+<cli/bin/codebuddy> --serve --acp --acp-transport streamable-http
+--strict-mcp-config --mcp-config {"mcpServers":{}}
+--permission-mode plan --tools ""
+```
+
+这些参数由程序以参数数组传递，以上仅用于说明，不应复制成忽略空参数/引号的启动命令。supervisor 负责动态端口和凭据引导；不要绕过它直接启动并期待自动继承桌面授权。
+
+环境中指定安装包自己的 `ACC_PRODUCT_CONFIG_PATH`、`CODEBUDDY_HOST=workbuddy-desktop`，以及已核验的 `CODEBUDDY_CONFIG_DIR` / `WORKBUDDY_CONFIG_DIR`；其余产品启动设置见 `desktopLaunch()`。`CODEBUDDY_GATEWAY_AUTH=password`，`CODEBUDDY_GATEWAY_PASSWORD` 是本应用随机生成、只用于这次本机连接的临时密码，**不是桌面账号密码或模型 API key**，不得落日志。保持接口认证开启。
+
+当前用于 CHAT：不向 ACP 宣告客户端文件读写能力，运行时关闭工具及额外 MCP，权限请求返回 cancelled。这里只记录当前启动配置；未验证 WORK、文件修改、附件工具读取等能力，不能从聊天成功推断这些能力已接通。
+
+### 复现与验收证据
+
+在 `D:\agents-group\dsh-agent-room` 下运行；路径含空格时整体加引号，换机器须改为实际安装路径：
+
+```powershell
+# 初始化、模型枚举及两个独立会话，不发送生成请求
+node scripts/check-live-workbuddy.cjs "workbuddy-ai=D:\WorkBuddy mocias\WorkBuddyAI.exe"
+
+# 另发送固定文字的真实模型测试请求
+node scripts/check-live-workbuddy.cjs "workbuddy-ai=D:\WorkBuddy mocias\WorkBuddyAI.exe" --chat
+
+# 启动本地服务后，在另一终端验证真实群聊
+npm start
+node scripts/check-live-workbuddy-group.cjs "D:\WorkBuddy mocias\WorkBuddyAI.exe"
+```
+
+群聊脚本默认访问 `http://127.0.0.1:4318`（可用 `AGENT_ROOM_URL` 指定），会保存国际版后端路径，创建或复用 `WorkBuddy AI`、`WorkBuddy AI 测试伙伴` 联系人和“WorkBuddy AI 接入验证”群，发送 `@所有人` 的真实模型请求并保留聊天记录。该脚本针对国际版；不得当作国内版验收。带 `--chat` 的检查和群聊脚本会使用现有账号额度。脚本只证明它们实际检查到的行为，不能仅因脚本存在就宣称已执行通过。
+
+2026-10-16 已完成的国际版证据：
+
+| 检查 | 本机证据 | 结论 |
+| --- | --- | --- |
+| supervisor → ACP → 模型回复 | `output/workbuddy-sidecar-ZvITYn/report.json` | `passed: true`，返回 `WORKBUDDY_SUPERVISOR_API_OK`，未重新登录，测试运行时已关闭 |
+| 两位群成员真实回复 | `output/workbuddy-group-OXkHEQ/report.json` | `passed: true`；两位 `fast-model` 成员有不同会话 ID/工作区，各自返回 `WORKBUDDY_GROUP_OK` |
+| 群聊 UI 发送及 @ 提及 | 同报告 `uiVerification` 与 `output/workbuddy-group-OXkHEQ/group-ui.png` | 从页面发送，只提及 `WorkBuddy AI`，得到 `WORKBUDDY_UI_OK` |
+| 自动回归 | 当次 `npm test`，41/41 通过 | 包含安装识别、流解析、独立运行时、断线清理/重连、工作区等；属于自动测试，不能替代国内版实测 |
+
+这些 `output/` 文件是本机历史验收产物，已被 Git 忽略；新环境可通过脚本重新生成。0.1.10 安装包已构建，不能把构建成功说成已经在另一台机器或另一个 Windows 用户下完成验收。
+
+### 未完成事项与排查入口
+
+- **国内版没有实测**；另一个 Windows 用户的连接程序、经过认证的跨用户转发、真实登录复用/模型/回复验证均待实现或执行。不能读取另一用户的凭据文件来替代连接设计。
+- 国际版目前仅确认本机 5.8.4；supervisor 控制管道、描述文件和内置 CLI 属于产品内部接口，版本升级后需重新核验，不能当作长期稳定的公开接口契约。
+- WorkBuddy 原生桌面任务列表是否显示群聊会话尚未验证；本应用的联系人和历史持久化不等于原生任务列表同步，也不等于跨重启恢复原 session ID。
+- 未发现运行时时先检查：是否同一 Windows 用户、选对版本/安装路径、桌面已登录且发送过消息、supervisor 进程路径是否匹配。不要转而要求群聊单独登录；不要记录描述文件 token、网关密码或 ACP sessionToken。
+
+## 0.1.10 代理与新工作区启动修复
+
+用户报告：开启全局代理时 Room 无法与 Codex 聊天，切成系统代理又影响 Dot；后端安装在不同盘时曾报错。没有原始报错或代理软件/模式信息，不能断言已复现用户所有网络模式。
+
+确认并修复的原因：
+
+- 旧 Codex/ACP 环境构造默认覆盖为 socks5h://127.0.0.1:10808，Codex 的 proxy:false 仍回落到固定值。改为共用 lib/backend-env.cjs：默认保留现有代理环境，未配置则不注入；只有显式后端代理或 AGENT_ROOM_PROXY 才追加。保留并合并 NO_PROXY/no_proxy，始终绕过 localhost、127.0.0.1、::1。proxy:false 或空字符串表示不追加应用代理，仍继承进程已有环境。
+- 后端管理新增“仅此后端使用的代理”可选地址，按后端保存在 backend-preferences.json，模型查询和聊天使用同一配置。留空恢复继承；支持 HTTP/HTTPS/SOCKS5/SOCKS5H，不接受含账号密码、路径或查询参数的 URL。WorkBuddy 继续使用桌面网络配置，该输入对 WorkBuddy 禁用。此设置不改变系统代理或 Dot。
+- 新 Agent 使用独立工作区时，旧 workspaces/<backend> 目录可能从未创建，spawn 使用不存在的 cwd 导致 ENOENT；Codex 可能停在初始化等待。进程启动现在优先使用已有后端目录，否则使用现有房间数据目录；具体 thread/session 仍传成员的工作区。没有同盘限制，也没有迁移或复制后端安装。
+
+验证：新增回归先在旧实现上失败，修复后 npm test 50/50 通过。checks/launch-workspace.test.cjs 真实启动 C 盘 Node 进程，执行 D 盘协议测试程序并创建 D 盘成员会话；这验证启动路径，不冒充真实 DSH 模型回复。checks/network-env.test.cjs 验证不强制代理、继承/显式代理和本地绕过；checks/discovery.test.cjs 验证代理持久化和非法地址拒绝。
+
+真实 Codex 端到端证据：output/codex-launch-live-EiaSzX/report.json，passed:true。通过本地应用 HTTP API 添加新 Agent、发送并收到 ROOM_CODEX_LAUNCH_OK；后端在 C 盘，应用数据和工作区在 D 盘，旧共享 workspaces/codex 目录不存在。仅为该测试后端配置本机现有 HTTP 代理，未改系统代理。先前未设置代理的一轮在当前网络下等待 90 秒无回复（output/codex-launch-live-PncL8Q/report.json），因此不能声称当前网络无需代理，也未对用户未说明的 TUN/全局/系统模式或 Dot 进行切换验收。
+
+复现：node scripts/check-live-codex-launch.cjs <codex.exe绝对路径>；可用 CHECK_BACKEND_PROXY 为隔离应用中的此后端指定代理。会发送一次真实模型请求并使用已有账号额度；报告和数据存入 output/codex-launch-live-*。该脚本跳过原生项目注册，未改变现有联系人/历史。
+
+代理设置 UI 验收：output/proxy-ui-a7GfI8/report.json 与 proxy-settings.png，验证手动配置、保存并重新打开后地址仍保留、切换 WorkBuddy 时禁用代理输入并提示使用桌面配置；测试在独立数据目录执行。

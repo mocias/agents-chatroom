@@ -21,6 +21,7 @@ async function ensureCodexProject(pool, agent) {
   return result.project.id;
 }
 async function registerAgent(agent, launch) {
+  if (['workbuddy', 'workbuddy-ai'].includes(agent.backend)) return { status: 'unsupported', detail: '已使用本机 WorkBuddy 后端及独立工作区；会话在本应用中管理，桌面任务列表显示尚未验证。' };
   if (agent.backend !== 'codex') return { status: 'unsupported', detail: agent.backend === 'dsh'
     ? 'DSH 会话已使用独立工作区；独立应用尚未连接桌面端 workspaceRegistry，不能保证桌面列表可见。'
     : 'Qoder ACP 会话与桌面项目库分离；当前版本尚无已验证的桌面导入接口。' };

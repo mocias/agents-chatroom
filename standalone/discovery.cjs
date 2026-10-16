@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { which, launchableFrom, nodeRunner, detectHarnesses, harnessIds } = require('../lib/harnesses.cjs');
+const { editions, isWorkbuddy, desktopLaunch } = require('./workbuddy.cjs');
 const run = promisify(execFile);
 const DSH_ENTRY = 'dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js';
 const isFile = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };
@@ -62,6 +63,18 @@ function normalizePath(value) {
   if (!path.isAbsolute(expanded)) throw new Error('请填写程序或安装目录的完整绝对路径');
   return path.normalize(expanded);
 }
+function normalizeProxy(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === false) return false;
+  let url;
+  try { if (typeof value !== 'string' || value.length > 2048) throw new Error(); url = new URL(value.trim()); }
+  catch { throw new Error('代理地址必须是完整的 HTTP、HTTPS 或 SOCKS URL'); }
+  if (!['http:', 'https:', 'socks5:', 'socks5h:'].includes(url.protocol) || !url.hostname ||
+      url.username || url.password || url.pathname && url.pathname !== '/' || url.search || url.hash) {
+    throw new Error('代理地址必须是 HTTP、HTTPS 或 SOCKS URL，不能包含账号密码、路径或查询参数');
+  }
+  return value.trim();
+}
 function dshLaunch(exe, home = process.env.DSH_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '', '.dsh')) {
   const archive = path.join(path.dirname(exe), 'resources', 'app.asar');
   if (!archiveHas(archive, DSH_ENTRY)) return null;
@@ -74,7 +87,7 @@ function dshLaunch(exe, home = process.env.DSH_HOME || path.join(process.env.USE
 function adapt(id, input, source = '手动指定', args) {
   let target = normalizePath(input);
   if (isDir(target)) {
-    const names = id === 'codex' ? /^(codex\.exe|codex)$/i : id === 'dsh' ? /^(DeepSeek Harness\.exe|dsh\.exe|dsh\.cmd)$/i : /^(qodercli(?:\.exe|\.cmd)?|qoder\.cmd|Qoder(?: CN)?\.exe)$/i;
+    const names = isWorkbuddy(id) ? new RegExp('^' + editions[id].exe.replace('.', '\\.') + '$', 'i') : id === 'codex' ? /^(codex\.exe|codex)$/i : id === 'dsh' ? /^(DeepSeek Harness\.exe|dsh\.exe|dsh\.cmd)$/i : /^(qodercli(?:\.exe|\.cmd)?|qoder\.cmd|Qoder(?: CN)?\.exe)$/i;
     for (const candidate of walk(target, (name) => names.test(name))) {
       try { return adapt(id, candidate, source, args); } catch { /* Continue past desktop-only executables. */ }
     }
@@ -84,7 +97,8 @@ function adapt(id, input, source = '手动指定', args) {
   if (args !== undefined && (!Array.isArray(args) || args.length > 40 || args.some((x) => typeof x !== 'string' || x.length > 4096 || x.includes('\0')))) throw new Error('启动参数必须是字符串 JSON 数组');
   let launch;
   let kind = 'CLI';
-  if (id === 'dsh' && (launch = dshLaunch(target))) kind = '桌面后端';
+  if (isWorkbuddy(id)) { launch = desktopLaunch(id, target); kind = '桌面后端'; }
+  else if (id === 'dsh' && (launch = dshLaunch(target))) kind = '桌面后端';
   else if (id === 'qoder' && (launch = qoderDesktopLaunch(target))) kind = '桌面后端';
   else {
     if (!/\.(exe|cmd|bat|js|cjs|mjs)$/i.test(target) && process.platform === 'win32') throw new Error('请选择 exe、npm cmd 启动器或 JavaScript 入口');
@@ -115,6 +129,7 @@ function qoderDesktopLaunch(exe) {
 class BackendDiscovery {
   constructor({ dir, inventory = windowsInventory, roots, legacy = {}, detect = detectHarnesses, lookup = which, allowAuto = true }) {
     this.allowAuto = allowAuto;
+    this.dir = dir;
     this.file = path.join(dir, 'backend-preferences.json');
     this.inventory = inventory;
     this.roots = roots;
@@ -146,17 +161,18 @@ class BackendDiscovery {
         try { const candidate = adapt(id, p, source, args); if (!candidates.some((c) => c.path.toLowerCase() === candidate.path.toLowerCase())) candidates.push(candidate); }
         catch { if (isFile(p)) installed.push(p); }
       };
-      const cliNames = id === 'codex' ? ['codex'] : id === 'dsh' ? ['dsh'] : ['qodercli', 'qoder'];
+      const cliNames = isWorkbuddy(id) ? [editions[id].exe] : id === 'codex' ? ['codex'] : id === 'dsh' ? ['dsh'] : ['qodercli', 'qoder'];
       if (id === 'codex') add(base.find((row) => row.id === id)?.binary, 'Codex 安装目录');
       if (this.allowAuto) for (const name of cliNames) add(this.lookup(name), 'PATH');
       const roots = this.roots?.[id] ? [...this.roots[id]] : (id === 'codex' ? [path.join(home, '.codex', 'packages', 'app-server-daemon', 'releases'), path.join(local, 'OpenAI', 'Codex'), path.join(roaming, 'npm', 'node_modules', '@openai', 'codex')] : id === 'dsh' ? [path.join(local, 'Programs', 'DeepSeek Harness'), path.join(local, 'DeepSeek Harness'), path.join(roaming, 'npm')] : [path.join(home, '.qoder', 'bin'), path.join(home, '.local', 'bin'), path.join(local, 'Programs', 'Qoder'), path.join(roaming, 'npm')]);
-      const pattern = id === 'codex' ? /codex/i : id === 'dsh' ? /deepseek|\bdsh\b/i : /qoder/i;
+      if (isWorkbuddy(id) && !this.roots?.[id]) roots.splice(0, roots.length, path.join(local, 'Programs', id === 'workbuddy' ? 'WorkBuddy' : 'WorkBuddyAI'), path.join(local, id));
+      const pattern = isWorkbuddy(id) ? /workbuddy/i : id === 'codex' ? /codex/i : id === 'dsh' ? /deepseek|\bdsh\b/i : /qoder/i;
       for (const item of inventory.rows) {
         if (!pattern.test(item.name || '')) continue;
         add(item.exe, item.source);
         for (const root of [item.location, item.exe && path.dirname(item.exe)]) if (root && isDir(root) && !roots.includes(root)) roots.push(root);
       }
-      const namePattern = id === 'codex' ? /^codex(?:\.exe|\.cmd)?$/i : id === 'dsh' ? /^(DeepSeek Harness\.exe|dsh(?:\.exe|\.cmd)?)$/i : /^(qodercli(?:\.exe|\.cmd)?|qoder\.cmd|Qoder(?: CN)?\.exe)$/i;
+      const namePattern = isWorkbuddy(id) ? new RegExp('^' + editions[id].exe.replace('.', '\\.') + '$', 'i') : id === 'codex' ? /^codex(?:\.exe|\.cmd)?$/i : id === 'dsh' ? /^(DeepSeek Harness\.exe|dsh(?:\.exe|\.cmd)?)$/i : /^(qodercli(?:\.exe|\.cmd)?|qoder\.cmd|Qoder(?: CN)?\.exe)$/i;
       if (this.allowAuto) for (const root of roots) for (const file of walk(root, (name) => namePattern.test(name))) add(file, '安装目录扫描');
       if (id === 'codex') {
         const running = new Set(inventory.rows.filter(row => row.source === '运行中的进程' && row.exe).map(row => path.normalize(row.exe).toLowerCase()));
@@ -178,7 +194,15 @@ class BackendDiscovery {
       let error = '';
       const preference = this.preferences[id]?.automatic ? null : this.preferences[id];
       if (preference) {
-        try { if (!this.allowAuto && isDir(preference.path)) throw new Error('手动模式请选择具体程序文件，不扫描目录'); selected = adapt(id, preference.path, '手动指定', preference.args); }
+        try {
+          if (!this.allowAuto && isDir(preference.path)) throw new Error('手动模式请选择具体程序文件，不扫描目录');
+          selected = adapt(id, preference.path, '手动指定', preference.args);
+          const proxy = normalizeProxy(preference.proxy);
+          if (proxy !== undefined) {
+            if (isWorkbuddy(id)) throw new Error('WorkBuddy 使用桌面现有网络配置，请在其桌面应用中设置代理');
+            selected.launch.proxy = proxy;
+          }
+        }
         catch (failure) { selected = null; error = '手动配置已失效：' + failure.message; }
       } else if (!this.preferences[id]?.automatic) {
         const old = this.legacy.backends?.[id];
@@ -188,7 +212,7 @@ class BackendDiscovery {
           catch (failure) { selected = null; error = '已有配置不可用：' + failure.message; }
         }
       }
-      const label = id === 'dsh' ? 'DSH' : id === 'codex' ? 'Codex' : 'Qoder';
+      const label = isWorkbuddy(id) ? editions[id].label : id === 'dsh' ? 'DSH' : id === 'codex' ? 'Codex' : 'Qoder';
       rows.push({ id, label, found: Boolean(selected), configured: Boolean(preference), binary: selected?.launch.codexPath || selected?.launch.agentCommand || null,
         status: selected ? 'detected' : error ? 'invalid' : installed.length ? 'installed' : 'missing',
         detail: error || (selected ? `已找到${selected.kind}入口；连接与登录尚未验证` : installed.length ? '已找到桌面程序，但未识别到聊天后端，请手动补充' : '未发现后端，请手动选择程序或安装目录'),
@@ -204,7 +228,9 @@ class BackendDiscovery {
     else {
       if (!this.allowAuto && isDir(normalizePath(value.path))) throw new Error('手动模式请选择具体程序文件，不扫描安装目录');
       const candidate = adapt(id, value.path, '手动指定', value.args);
-      next[id] = { path: normalizePath(value.path), ...(value.args === undefined ? {} : { args: value.args }) };
+      const proxy = normalizeProxy(value.proxy);
+      if (isWorkbuddy(id) && proxy !== undefined) throw new Error('WorkBuddy 使用桌面现有网络配置，请在其桌面应用中设置代理');
+      next[id] = { path: normalizePath(value.path), ...(value.args === undefined ? {} : { args: value.args }), ...(proxy === undefined ? {} : { proxy }) };
       if (!candidate.launch) throw new Error('没有可用启动方式');
     }
     fs.writeFileSync(this.file + '.tmp', JSON.stringify(next, null, 2), 'utf8');

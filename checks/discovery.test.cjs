@@ -118,3 +118,17 @@ test('Codex Node launcher arguments are forwarded before the app-server argument
   await assert.rejects(pool.start(), /fixture stop/);
   assert.deepEqual(captured.args, ['C:\\custom path\\codex.js', 'app-server', '--listen', 'stdio://']);
 });
+
+test('per-backend proxy settings persist independently and reject invalid or credential-bearing URLs', async () => {
+  const f = fixture(), exe = f.file('codex.exe');
+  const service = manager(f.root);
+  await service.save('codex', { path: exe, proxy: 'http://127.0.0.1:21080' });
+  const restored = manager(f.root);
+  assert.equal((await restored.scan()).find(r => r.id === 'codex').selected.launch.proxy, 'http://127.0.0.1:21080');
+  for (const proxy of ['not a URL', 'file:///C:/proxy', 'http://name:password@127.0.0.1:21080', 'http://127.0.0.1:21080/a']) {
+    await assert.rejects(restored.save('codex', { path: exe, proxy }), /代理/);
+  }
+  assert.equal((await restored.scan()).find(r => r.id === 'codex').selected.launch.proxy, 'http://127.0.0.1:21080');
+  const cleared = await restored.save('codex', { path: exe, proxy: '' });
+  assert.equal(cleared.find(r => r.id === 'codex').selected.launch.proxy, undefined);
+});

@@ -47,7 +47,7 @@ function makeMenu(dataDir) {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'Agent Room', submenu: [
       { label: '打开数据文件夹', click: () => { void shell.openPath(dataDir); } },
-      { label: '关于 Agent Room', click: () => { void dialog.showMessageBox(window, { type: 'info', title: '关于 Agent Room', message: `Agent Room ${app.getVersion()}`, detail: '本地多 Agent 聊天应用\n支持 Codex / DSH / Qoder\n\n聊天数据保存在本机。' }); } },
+      { label: '关于 Agent Room', click: () => { void dialog.showMessageBox(window, { type: 'info', title: '关于 Agent Room', message: `Agent Room ${app.getVersion()}`, detail: '本地多 Agent 聊天应用\n支持 Codex / DSH / Qoder / WorkBuddy 国内与国际版\n\n聊天数据保存在本机。' }); } },
       { type: 'separator' }, { label: '退出', role: 'quit' },
     ] },
     { label: '编辑', submenu: [{ label: '撤销', role: 'undo' }, { label: '重做', role: 'redo' }, { type: 'separator' }, { label: '剪切', role: 'cut' }, { label: '复制', role: 'copy' }, { label: '粘贴', role: 'paste' }, { label: '全选', role: 'selectAll' }] },

@@ -42,6 +42,21 @@ async function until(fn) {
   for (let i = 0; i < 100; i++) { const result = await fn(); if (result) return result; await new Promise((resolve) => setTimeout(resolve, 20)); }
   throw new Error('Timed out');
 }
+test('both WorkBuddy editions can share a group with independent backend and workspace routing', async t => {
+  const captured = [];
+  const env = await start(t, { roomFactory: fakeFactory(captured), queryModels: async id => ({ selected: id + '-model', models: [{ id: id + '-model', name: id, efforts: [] }] }) });
+  const cnResult = await env.call('/agents', { label: '国内伙伴', backend: 'workbuddy', model: 'workbuddy-model' });
+  const aiResult = await env.call('/agents', { label: '国际伙伴', backend: 'workbuddy-ai', model: 'workbuddy-ai-model' });
+  assert.equal(cnResult.status, 201); assert.equal(aiResult.status, 201);
+  const cn = cnResult.data.agent, ai = aiResult.data.agent;
+  assert.notEqual(cn.workspace, ai.workspace);
+  assert.equal(cn.modelLocked, true); assert.equal(ai.modelLocked, true);
+  const group = (await env.call('/groups', { agentIds: [cn.id, ai.id] })).data.conversation;
+  assert.equal((await env.call('/say', { room: group.id, text: '@所有人 你好' })).status, 202);
+  await until(() => captured.length === 2);
+  assert.deepEqual(new Set(captured.map(c => c.backend)), new Set(['workbuddy', 'workbuddy-ai']));
+  assert.equal((await env.call('/backend-login', { id: 'codex' })).status, 400);
+});
 test('deleting an Agent requires an explicit workspace choice, keeps group history and protects shared folders', async t => {
   const env = await start(t, { roomFactory: fakeFactory([]) });
   const a = (await env.call('/agents', { label: '删除测试', backend: 'dsh' })).data.agent;

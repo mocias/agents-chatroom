@@ -1,13 +1,16 @@
 'use strict';
 const { CodexThreadPool } = require('../lib/codex-pool.cjs');
 const { AcpPool } = require('../lib/acp-backend.cjs');
+const { harnessIds } = require('../lib/harnesses.cjs');
+const { WorkbuddyPool } = require('../lib/workbuddy-pool.cjs');
 function choices(option) {
   return (option?.options || []).flatMap(group => Array.isArray(group.options)
     ? group.options.map(item => ({ ...item, provider: group.name || group.group })) : [group]);
 }
 async function queryModels(id, launch, cwd, selected) {
-  if (!['codex', 'dsh', 'qoder'].includes(id)) throw new Error('该后端尚未接入模型查询');
-  const pool = id === 'codex' ? new CodexThreadPool({ ...launch, cwd }) : new AcpPool({ ...launch, cwd });
+  if (!harnessIds().includes(id)) throw new Error('该后端尚未接入模型查询');
+  const Pool = id === 'codex' ? CodexThreadPool : launch?.workbuddySupervisor ? WorkbuddyPool : AcpPool;
+  const pool = new Pool({ ...launch, cwd });
   try {
     await pool.start();
     if (id === 'codex') {
