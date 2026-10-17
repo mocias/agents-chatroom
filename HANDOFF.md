@@ -315,3 +315,9 @@ node scripts/check-live-workbuddy-group.cjs "D:\WorkBuddy mocias\WorkBuddyAI.exe
 真实 Electron 首轮验证进一步发现 fs.cpSync 在根目录旁临时文件夹执行时进程退出（ECONNRESET，退出码 4294930435），临时副本仍为空；不能把初次测试通过认定为迁移成功。改为显式递归目录并 copyFileSync，拒绝特殊文件且不覆盖目标文件。最终真实安装版启动成功迁移至 D:\agent room data，pending/warning 均为空，证据 output/root-migration-0.1.14.json/png。原目录 10 文件哈希不变；8 个非 catalog/marker 文件在新目录哈希一致。失败产生的两个空临时目录保留，未执行删除。
 
 68/68 回归通过；最终安装版闹钟、重启、退出检查 output/packaged-alarms-37j1VO/report.json。桌面已增量修复至 0.1.14；最终发行增量包基于备份的原 0.1.13 三个程序文件重新生成，不基于中间测试版。源数据未删除。
+
+## 2026-10-17 0.1.15：气泡正文移除系统发送者前缀
+
+渲染正文改用 record.text，不再使用供模型上下文识别发言者的 displayText。发送者继续显示在气泡上方；原消息的 @点名 / #私聊对象与私聊范围标签保留。历史文件和模型输入格式不变，不修改模型自己写出的自我介绍。
+
+验证：真实浏览器+模拟模型 output/private-chat-ui-U3J7Jc/report.json，严格核对用户及私聊正文没有自动发送者前缀；公开/私聊闹钟、第三 Agent 排除、刷新通过。打包验收 output/packaged-alarms-0uSpXB/report.json；安装版 output/packaged-alarms-rkdJJc/report.json。桌面已通过增量更新至 0.1.15，无需重装。完整安装包和 0.1.14→0.1.15 增量 ZIP 在 dist。

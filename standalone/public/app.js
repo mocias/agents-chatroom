@@ -35,7 +35,7 @@ function renderMessages() {
     const privateMessage = record.visibility === 'private';
     const recipients = (record.recipientIds || []).map((id, i) => id === 'user' ? '用户' : (state.agents.find(a => a.id === id)?.label || record.recipientLabels?.[i] || id)).join('、');
     const scope = privateMessage ? `<span class="private-label">私聊 · ${escapeHtml(record.authorLabel)} → ${escapeHtml(recipients)} · 用户可见</span>` : '';
-    return `<article class="message ${isUser ? 'user' : ''} ${privateMessage ? 'private-message' : ''}">${isUser ? '<span class="avatar">我</span>' : avatar(agent)}<div class="message-main"><div class="message-meta"><span>${escapeHtml(record.authorLabel)}</span><time>${time(record.ts)}</time></div>${scope}<div class="bubble">${escapeHtml(record.displayText || record.text)}${files}</div></div></article>`;
+    return `<article class="message ${isUser ? 'user' : ''} ${privateMessage ? 'private-message' : ''}">${isUser ? '<span class="avatar">我</span>' : avatar(agent)}<div class="message-main"><div class="message-meta"><span>${escapeHtml(record.authorLabel)}</span><time>${time(record.ts)}</time></div>${scope}<div class="bubble">${escapeHtml(record.text)}${files}</div></div></article>`;
   }).join('');
   updateLiveMessages(panel);
   if (!panel.children.length) panel.innerHTML = '<div class="empty-chat"><strong>从一句「你好」开始</strong><p>文字、文件、图片，都可以分享。</p></div>';
