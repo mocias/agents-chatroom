@@ -18,6 +18,7 @@ function desktopLaunch(id, exe) {
   if (product.authentication?.id !== edition.authId) throw new Error('WorkBuddy 国内版与国际版不匹配，请选择对应版本');
   return { agentCommand: exe, agentArgs: [entry, '--serve', '--acp'], proxy: false,
     workbuddySupervisor: true,
+    workbuddyProductPath: productPath,
     workbuddyConfigCandidates: [...new Set([edition.configName, '.workbuddy-ai', '.workbuddy'])].map(name => path.join(os.homedir(), name)),
     env: { ELECTRON_RUN_AS_NODE: '1', DISABLE_AUTOUPDATER: '1', CODEBUDDY_FORCE_LITE_WB_BUNDLE: '1',
       CODEBUDDY_DISABLE_PRODUCT_CACHE: '1',

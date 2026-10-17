@@ -102,7 +102,7 @@ const { AgentRoom } = require('../lib/room.cjs');
     assert.ok(calls.filter(c => c.label === '研究员').every(c => !c.text.includes('alarm-private-456')));
     await draft.fill('/alarm 1h #审查员 cancel-ui'); await page.locator('#send').click();
     await page.getByText(/闹钟已设置：.*cancel-ui/).waitFor();
-    await page.locator('#alarms').click();
+    await page.locator('#tools-toggle').click(); await page.locator('#alarms').click();
     await page.locator('.alarm-row').filter({ hasText: 'cancel-ui' }).getByRole('button', { name: '取消闹钟' }).click();
     await page.locator('.alarm-row').filter({ hasText: 'cancel-ui' }).filter({ hasText: '已取消' }).waitFor();
     await page.getByRole('button', { name: '关闭弹窗', exact: true }).click();

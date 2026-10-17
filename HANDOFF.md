@@ -1,6 +1,6 @@
 # Agents Chatroom — Handoff
 
-交接日期：2026-10-16。源码版本 0.1.10，新仓库 agents-chatroom。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
+交接更新：2026-10-17。源码版本 0.1.19，仓库 agents-chatroom。此次 Claude Code 接入基于 GitHub main 与本地一致的 0.1.17（5e67747），保留后续身份分层、私聊、闹钟、群管理、数据迁移与界面优化。Claude 桌面 Gateway API 的单条真实回复已通过，详见文末 0.1.19 记录。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
 
 0.1.8 更新：默认工作区改为桌面安装目录/agents/backend/Agent名称；浏览器默认源码根/agents，支持 AGENT_ROOM_WORKSPACE_ROOT；旧路径不迁移。添加删除操作，默认保留文件，删除文件需完整路径确认，禁止共用/嵌套工作区、磁盘根、应用数据祖先、符号链接/联接。删除联系人移除单聊入口与群成员，保留群聊记录、底层日志和原后端记录。安装包构建不等于用户已安装版本更新。
 
@@ -335,3 +335,94 @@ Agent 基础指令明确名称、工作区和 persona；单聊单独说明一对
 思考/回复/连接重试状态移至输入工具栏右侧，空生成不再占聊天气泡；真正生成的文本仍为用户可见预览。消息列表保留未改变的 DOM 节点，避免状态更新重建历史。后端启动及点名多人回复并发；已连接会话发送不再等待发现扫描；单聊后续普通消息不再等待 1.2 秒群聊合并计时器。外部模型网络重试及冷启动耗时仍存在，没有宣称消除所有延迟。
 
 验证：70 项自动测试通过（output/tests-0.1.17.log）；500 条历史的真实浏览器+模拟模型验证右侧状态、无空气泡、旧节点保留、私聊与闹钟（output/private-chat-ui-7OTcIh）。打包版群管理、输入框和长历史滚动、闹钟与重启通过（output/group-management-ui-PFkpRc、output/composer-ui-JONeiy、output/packaged-alarms-Qu7LLZ）。本机应用退出后已增量更新 0.1.15→0.1.17，安装版独立数据验收通过（output/packaged-alarms-pDmPqS）；原程序备份在安装目录 .update-backup-0.1.15-3867e937a84c4d108979273f0168756f。未调用真实模型或修改真实聊天记录进行测试。
+
+## 2026-10-17 0.1.18：Claude Code 本机终端桥接（真实模型待验收）
+
+### 更新基础与状态
+
+开始时本地干净，0.1.17 / HEAD 5e67747。使用现有本机 HTTP 代理拉取 agents-chatroom 后，HEAD 与 agents-chatroom/main 的左右差异为 0/0。此次修改是在该版本上追加，未从旧 0.1.10 回退；没有改写 room.cjs 的身份分层、私聊、闹钟或群管理实现。开始前 70 项基线通过，完成后 78 项通过。
+
+**已实现并通过模拟协议/应用流程测试，不等于已接通本机真实 Claude。** 本机 PATH、常见终端安装目录及 Claude 安装/运行目录未找到终端版入口；确认了 Claude 桌面进程（2.42304.0）与下载的 Claude Setup.exe。这些不证明终端版已安装，也不能断言 Claude 桌面未来永远无法桥接。用户安装的是桌面 Code 页面还是独立终端版，尚待确认；没有擅自安装另一个 CLI、发起登录或复制桌面凭据。
+
+### 接入链路与流程
+
+Room → 现有 AcpPool → standalone/claude-acp.cjs → 本机 Claude Code CLI 的双向 stream-json → 模型回复。ACP 由本项目桥接提供，不能称 Claude Code CLI 原生支持 ACP。协议参考 [官方 CLI 文档](https://code.claude.com/docs/en/cli-reference) 与 [官方 Python SDK 控制协议实现](https://github.com/anthropics/claude-agent-sdk-python/blob/main/src/claude_agent_sdk/_internal/query.py)。
+
+1. 找到当前 Windows 用户的终端版 claude.exe、npm claude.cmd 或 CLI JavaScript 入口；用户指定路径优先。自动发现仍遵守现有扫描许可，拒绝把 Claude 桌面 EXE 当 CLI。终端程序、Room 和工作区无需同盘。
+2. 在“后端管理”选择 Claude Code 并保存该路径。使用终端版自己已有的登录/提供方配置；代理继承 Room 进程环境，可设置仅此后端代理。尚未验证复用 Claude 桌面登录，不能承诺桌面已登录就无需配置终端版。
+3. “添加 Agent”读取原生 initialize 返回的 models，再用 set_model 并等待确认。只列 CLI 返回的模型，不生成备用模型列表；模型别名仍由 Claude Code 解释，无法承诺固定底层版本。没有模型或拒绝切换会报错。
+4. 每个会话新建独立 CLI 子进程、session UUID 与成员工作区，同一 Agent 跨群复用工作区而会话独立。当前会话保留上下文；Room 重启后按现有日志机制重建，不声称恢复原生 session ID 或同步至 Claude 桌面任务列表。
+5. 流式 delta 转成 ACP 更新；完整 assistant/result 仅作无流式内容时的后备，避免重复。result 即使 subtype=success，只要 is_error=true 仍按错误处理。取消通过 interrupt；异常退出使池清除旧会话，下轮可重建。退出只清理此桥接创建的子进程。
+6. 当前只开放文本 CHAT：空工具集、plan 权限模式、禁用 hooks、空 MCP 配置，收到工具许可请求一律拒绝。消息标记 client_composed，防止 Room 的 @ 提及被 CLI 当作文件展开。图片/文件内容未接入；没有验证可用的推理强度控制，故不提供虚构档位。身份和群规则继续复用 0.1.17 注入路径，单聊不含群规则；私聊与闹钟由原有 Room 引擎处理。
+
+入口位于 lib/harnesses.cjs、standalone/discovery.cjs；桥接为 standalone/claude-acp.cjs，沿用 lib/acp-backend.cjs 与 standalone/models.cjs。打包后桥接在 app.asar 内，因此必须由 Electron 的 Node 模式运行，不能交给 PATH 上普通 Node 读取 ASAR。安装包不分发 Claude CLI 或用户配置。
+
+### 已执行的验证与证据
+
+- output/tests-claude-integration.log：78/78 自动检查通过。新增 checks/claude.test.cjs 的 8 项使用 checks/fixtures/claude-stream-fixture.cjs 模拟 CLI：发现/桌面排除、模型读取与拒绝、两位成员会话/工作区隔离、流式去重、错误/权限、取消、进程崩溃重连、最新版单聊/群聊身份与真实 HTTP 联系人/置顶/历史重启流程。其余 70 项覆盖现有私聊、闹钟、代理、跨盘、迁移及群管理，不能当成真实模型验收。
+- output/claude-ui-0.1.18/report.json、reply.png、settings.png：真实浏览器实际操作，使用模拟 CLI，验证读取模型、选择 Opus fixture、创建联系人、发送显示回复和准确的后端说明；未调用真实 Claude。
+- output/claude-packaged-JZw4vV/report.json：实际 0.1.18 ASAR 内的桥接，在 PATH 有系统 Node 和没有系统 Node 两种环境均完成模型选择及模拟回复。这是打包运行时验证，不是完整桌面 GUI 或真实模型验证。
+- output/claude-live-CbEjct/report.json：本机终端入口发现失败，modelRequestsSent=false、chatVerified=false；没有把桥接 initialize 成功当成实际 Claude 已连接。
+- output/update-0.1.18-validation.json：在隔离的 0.1.17 安装副本上应用增量包，三个目标文件哈希与新版本一致、ASAR 版本 0.1.18、测试用户目录保留。没有替换用户当前安装或修改真实聊天数据。
+
+后续找到终端版入口后运行：
+
+```powershell
+node scripts/check-live-claude.cjs "终端版 claude 程序完整路径"
+node scripts/check-live-claude.cjs "终端版 claude 程序完整路径" --chat
+```
+
+首条只验证原生初始化、模型列表与独立会话，不证明账号可推理。第二条会向两个独立会话各发送一条固定标记消息、使用账号额度；必须实际执行通过后才能写“真实 Claude 回复已验证”。再在独立数据目录完成真实群聊 @、私聊和闹钟验证。脚本保留 report.json，不自动登录或导出账号信息。
+
+### 构建交付
+
+源码版本 0.1.18。完整安装包 dist/Agent-Room-Setup-0.1.18-x64.exe（102716652 字节）；对应最新 0.1.17 的增量包 dist/Agent-Room-Update-0.1.17-to-0.1.18-x64.zip（298294 字节）。保留旧版文件校验和备份逻辑。更新真实安装前需确认当前版本仍为 0.1.17；包构建及隔离升级成功不等于已更新用户安装，也不等于真实 Claude 已接入。
+
+WorkBuddy 验证边界继续不变：仅国际版 5.8.4 有真实接入证据，国内版未实测。
+
+
+## 2026-10-17 0.1.19：Claude 桌面 Gateway API 接入与已安装版本真实验证
+
+本节优先于前文 0.1.18 的历史状态。用户已在 Claude 桌面配置 Gateway API，Code 可用；不能再用此前 Free 账号或缺少终端 CLI 的结论描述当前状态。
+
+实现：选择 Claude 桌面 EXE 后，standalone/claude-desktop.cjs 在当前 Windows 用户的 Claude-3p 目录中解析已应用配置元数据、内置 Code 运行程序和公开模型缓存。桥接只保存桌面入口与配置目录引用。API 密钥仅在桥接进程内存和子进程环境中使用，不导出至 Room 后端配置、报告或聊天日志；错误消息屏蔽已知密钥。当前支持 Gateway 的 bearer 和 x-api-key，其他提供方未验收。第一方桌面账号登录复用与桌面原生任务列表同步仍未接通。
+
+模型处理：终端 CLI 的别名可能与桌面不同，需读取 model-catalog/published.json 中桌面 ccd 的 provider_alias_targets，并按 Gateway 目标设置原生别名；显式 inferenceModels 家族默认项优先。本次 Haiku 对应 claude-haiku-4-5-20251001。目录来源是桌面现有缓存，不代表网关对全部列出模型均授权。
+
+本轮发现并修复：Code 2.1.299 的 Plan 模式会把 Haiku 提升到 Sonnet；改用 default 权限模式，同时保持空工具集、禁用 hooks、空 MCP 和许可回调拒绝。之前尝试的 ANTHROPIC_MAX_OUTPUT_TOKENS 不生效，检查脚本现使用 CLAUDE_CODE_MAX_OUTPUT_TOKENS=32、MAX_THINKING_TOKENS=0，并采用简短系统提示。没有保留不必要的进程重启方案。
+
+验证边界：
+
+- 80/80 离线回归通过：output/tests-claude-desktop-api.log。首次全量运行曾出现 WorkBuddy 模拟群聊的两秒等待超时；该文件单独 15/15 与最终全量 80/80 均通过，不把早先失败轮次称作通过。
+- 真实 Code 运行程序 + 本机假 API 通过：output/claude-local-gateway-Caf1Ln/report.json。观察到请求使用桌面 Haiku 4.5 映射、max_tokens=64；该检查不使用用户 API 或真实模型。
+- 打包版模拟检查：output/claude-packaged-fOxrYL/report.json，有无系统 Node 两种情况通过，并确认可解析桌面 API 入口。
+- 早先一次真实短回复尝试失败：output/claude-live-EEwwVo/report.json，选定 Haiku 却请求 Sonnet 5.5。之后的排查均使用本机假 API。
+- 用户再次授权更新与真实验证后，仅发送一条测试消息。证据 output/claude-installed-live-Cnn5HP/report.json：installedVersion=0.1.19、desktopBackendConfigured=true、selectedModel=haiku、reply=CLAUDE_ROOM_OK、status=end_turn、passed=true。测试直接加载安装目录内的代码，并由已安装桌面 EXE 的 Node 模式运行。Room 回报输入加输出计数为 366 tokens；此计数不能作为完整网关账单核对，未统计原生重试的 HTTP 次数或缓存读写用量。
+
+已更新当前安装 D:/Agent Room：0.1.17 → 0.1.19，实际生产代码已核对与源码一致。打包会调整 package.json.main 为 desktop/main.cjs，不能逐字比较打包前后的 package.json 来判断旧包。程序备份 D:/Agent Room/.update-backup-0.1.17-2694efb43e4544ac8578327ab1d8a5f2；真实聊天数据目录 D:/agent room data 保留。使用应用自身 BackendDiscovery.save 保存 Claude 桌面入口，未改其他后端设置；原后端配置备份位于该真实验证输出目录。未在用户聊天记录中插入测试消息或创建测试群。
+
+这次成功证明已安装桥接可复用当前桌面 Gateway 配置并得到 Haiku 的真实短回复；未做多模型、多成员、真实群聊私聊/闹钟或跨重启原生会话恢复验收。此类行为仅有既有离线测试覆盖。WorkBuddy 仍仅国际版有真实接入证据，国内版未实测。
+
+## 2026-10-17 0.1.20：具体模型目录补全
+
+Claude 桌面桥接从当前 profile 的 model-catalog/published.json 读取 ccd 中支持 gateway 的具体模型，并合并显式 inferenceModels；保留 CLI 旧别名供既有 Agent 使用。真实目录查询返回 12 个具体模型，另保留兼容别名。选中模型经 set_model 传递原始 ID，不把多个版本折叠成家族别名。查询目录本身不额外执行 set_model。
+
+WorkBuddy 原生 CLI 默认角色仅列四档。实验表明 web-ui header + models/refresh 或启用缓存仍返回四档，因此未引入这些无效改动。改为保留 ACP 原生选项，并用选定可执行文件同版本 product.json 中 supportsToolCall 且未 hidden/disabled 的模型补全，核验 authentication.id 避免国内/国际混用。不读取其他版本旧缓存，不编造 Step-5 等本版本未列出的模型；动态云端目录与权益可与安装版本目录不同。模型权限仍由服务端判断。
+
+验证：81/81 回归通过，output/tests-model-catalog.log。WorkBuddy AI 原生查询 22 项、DeepSeek 完整 ID 被严格会话接受且一次真实回复 MODEL_SELECTION_OK（output/workbuddy-concrete-model.json）。Claude 真实 CLI + 本机假 Gateway 记录请求 model=claude-haiku-4-5-20251001（output/claude-local-gateway-OOjFxk/report.json），不是只改下拉框名称；未逐项验证所有远端模型。打包桥接与闹钟退出/重启通过 output/claude-packaged-ouUPD5、output/packaged-alarms-vhXW2K。
+
+0.1.20 完整安装包及 0.1.19→0.1.20 增量 ZIP 已生成。用户安装版正在运行，因此没有关闭或替换，当前仍为 0.1.19。本轮未提交/上传混合工作树中的既有 Claude 接入改动。
+
+## 2026-10-17 0.1.21：WorkBuddy 桌面在线目录快照同步
+
+替换 0.1.20 的安装包模型补全。已定位 WorkBuddy 5.8.4 CloudProductManager 的 cloud_product_config_cache，desktop LocalStorage 为 wb_entry_<md5(key)>.info。仅读取 connectSupervisor 已验证 exe 的 configDir（本机 AI 实际为 .workbuddy，不能按版本名猜 .workbuddy-ai），支持 gzip/JSON，按 agents[cli].models 排序过滤模型；只输出 ID/名称，限输入与解压大小。多个账号缓存无法判定时拒绝补全，降级提示。没有读取凭据、修改桌面配置、刷新云端或改变现有会话。目录快照可能滞后于云端；自定义模型和套餐灰显尚未同步。刷新操作重新读取磁盘；账户权益仍由 WorkBuddy 校验。
+
+验证：9 项定向回归；完整套件第一次群聊路由测试超时，隔离复跑通过，最终 82/82（output/tests-workbuddy-desktop-catalog-rerun.log）。实际读出 27 模型，Step-5 完整 ID 严格选择成功，真实一次短回复 MODEL_CATALOG_OK，证据 output/workbuddy-desktop-catalog.json。打包版 0.1.21 启动/闹钟/重启/退出通过 output/packaged-alarms-JXJek5。生成完整安装包和 0.1.19 到 0.1.21 增量包；D:/Agent Room 0.1.19 仍运行，未替换或中断。
+
+## 2026-10-17 0.1.22：工具栏与交互边界
+
+输入工具统一为 20px 线框 SVG、13px 文字和 36px 点击区域；闹钟移入工具菜单，支持点击外部、Escape、方向键与 Tab。输入卡片、会话列表、搜索和按钮增加主题适配的边界、悬浮和焦点反馈。窄窗口截图发现菜单被聊天边界裁切，修正定位并加入真实几何断言。
+
+82/82 回归 output/tests-0.1.22.log；最终打包界面交互 output/composer-ui-ByLsOl，覆盖图标尺寸/悬浮、菜单键盘与外部关闭、闹钟弹窗、草稿保留、窄屏边界、提及和独立滚动。打包闹钟/退出/重启 output/packaged-alarms-8n7NBj；Claude 模拟协议打包验证 output/claude-packaged-ySbBdP（有/无系统 Node），不是新增真实模型调用。
+
+本地 D:/Agent Room 已应用 0.1.21→0.1.22 增量更新并启动，更新文件 SHA-256 全部匹配；备份 .update-backup-0.1.21-d7d27d1bfb364487931eeffc2fb4293f。未卸载或改动真实聊天内容。发布目标是 agents-chatroom/main，不是 origin/master。

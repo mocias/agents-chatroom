@@ -11,3 +11,36 @@ html,body{height:100%;overflow:hidden}.shell{min-height:0;overflow:hidden}.sideb
 .alarm-row{padding:14px 0;border-bottom:1px solid var(--ar-line)}.alarm-row p{white-space:pre-wrap;overflow-wrap:anywhere}
 /* Agent activity stays on one line at the right of the composer toolbar. */
 .composer-tools{min-width:0}#activity{flex:0 1 auto;margin-left:auto;min-width:0;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:12px}
+
+/* Consistent controls and clear, theme-aware interaction boundaries. */
+button{transition:background .15s,border-color .15s,box-shadow .15s;color:var(--ar-text)}
+button:not(:disabled):hover{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ar-dim) 30%,transparent)}
+.search{border:1px solid var(--ar-line);transition:border-color .15s,background .15s}
+.search:hover,.search:focus-within{border-color:var(--green);background:var(--ar-panel)}
+.list-heading{border-bottom:1px solid var(--ar-line);margin-bottom:8px}
+.conversation{border:1px solid transparent}
+.conversation:hover,.conversation:focus-visible{background:color-mix(in srgb,var(--ar-dim) 10%,var(--ar-panel));border-color:var(--ar-line)}
+.conversation.active{border-color:color-mix(in srgb,var(--green) 28%,var(--ar-line))}
+.conversation.active:hover{background:color-mix(in srgb,var(--green) 18%,var(--ar-panel))}
+.tabs button:hover,.text-button:hover,.header-actions .square:hover{background:color-mix(in srgb,var(--ar-dim) 12%,var(--ar-panel))}
+.composer{margin:0 18px 16px;padding:12px 16px 14px;border:1px solid var(--ar-line);border-radius:14px;box-shadow:0 2px 8px #00000004;transition:border-color .15s,box-shadow .15s}
+.composer:hover{border-color:color-mix(in srgb,var(--ar-dim) 55%,var(--ar-line))}
+.composer:focus-within{border-color:color-mix(in srgb,var(--green) 65%,var(--ar-line));box-shadow:0 0 0 2px color-mix(in srgb,var(--green) 9%,transparent)}
+.composer-tools{gap:6px;padding-bottom:9px;border-bottom:1px solid color-mix(in srgb,var(--ar-line) 65%,transparent)}
+.composer-tools .tool-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:36px;padding:7px 9px;font-size:13px;line-height:20px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--ar-dim);flex-shrink:0}
+.composer-tools .tool-button span{font-size:13px;margin:0;line-height:20px}
+.ui-icon{display:block;width:20px;height:20px;flex-shrink:0}
+#tools-toggle .ui-icon:last-child{width:14px;height:14px}
+.composer-tools .tool-button:hover,.composer-tools .tool-button[aria-expanded="true"]{background:color-mix(in srgb,var(--ar-dim) 12%,var(--ar-panel));color:var(--ar-text);border-color:var(--ar-line);box-shadow:none}
+.tools-dropdown{position:relative;flex-shrink:0}
+#tools-menu{position:absolute;bottom:calc(100% + 12px);left:0;min-width:228px;max-width:calc(100vw - 32px);padding:6px;background:var(--ar-panel);border:1px solid var(--ar-line);border-radius:12px;box-shadow:0 8px 30px #0002;z-index:8}
+.tools-menu-heading{padding:7px 10px 9px;font-size:11px;color:var(--ar-dim);border-bottom:1px solid var(--ar-line);margin-bottom:4px}
+#tools-menu button{display:flex;align-items:center;gap:12px;width:100%;padding:10px;border:1px solid transparent;border-radius:7px;color:var(--ar-text);text-align:left;font-size:13px;background:transparent}
+#tools-menu button:hover,#tools-menu button:focus-visible{background:color-mix(in srgb,var(--green) 9%,var(--ar-panel));border-color:color-mix(in srgb,var(--green) 25%,var(--ar-line))}
+#tools-menu button span{display:block;font-size:13px;line-height:20px;margin:0}
+#tools-menu small{display:block;font-size:11px;line-height:18px;color:var(--ar-dim);margin-top:2px}
+#stop{font-size:12px;padding:7px 10px;border:1px solid var(--ar-line);border-radius:7px}
+.composer #draft{font-size:14px;line-height:1.7;padding:12px 4px;outline:none}
+.composer footer{padding-top:6px}
+@media(max-width:760px){.composer{margin:0 10px 10px;padding:10px}.composer-tools{gap:3px}.composer-tools .tool-button{padding:7px}.composer-tools .tool-button span{display:none}#tools-menu{left:0;right:auto;min-width:200px}#activity{font-size:11px}}
+@media(prefers-reduced-motion:reduce){button,.composer,.search{transition:none}}

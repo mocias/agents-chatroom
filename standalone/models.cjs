@@ -23,10 +23,10 @@ async function queryModels(id, launch, cwd, selected) {
     let config = session.configOptions || [];
     const modelOption = config.find(o => o.category === 'model');
     const models = choices(modelOption).map(m => ({ id: m.value, name: m.name || m.value, provider: m.provider || '', efforts: [], defaultEffort: null }));
-    const wanted = selected || modelOption?.currentValue;
+    const wanted = selected || (pool.desktopCatalogStatus?.source === 'desktop-cache' && !models.some(m => m.id === modelOption?.currentValue) ? models[0]?.id : modelOption?.currentValue);
     if (!models.some(m => m.id === wanted)) throw new Error('后端没有返回可用的所选模型');
-    if (selected) {
-      const updated = await pool.request('session/set_config_option', { sessionId: session.sessionId, configId: modelOption.id, value: selected });
+    if (selected || wanted !== modelOption?.currentValue) {
+      const updated = await pool.request('session/set_config_option', { sessionId: session.sessionId, configId: modelOption.id, value: wanted });
       if (updated.configOptions) config = updated.configOptions;
     }
     const effortOption = config.find(o => o.category === 'thought_level');
@@ -34,7 +34,7 @@ async function queryModels(id, launch, cwd, selected) {
     active.efforts = choices(effortOption).map(e => e.value).filter(Boolean);
     active.defaultEffort = effortOption?.currentValue || null;
     if (pool.info?.agentCapabilities?.sessionCapabilities?.close) await pool.request('session/close', { sessionId: session.sessionId });
-    return { models, selected: wanted };
+    return { models, selected: wanted, ...(pool.desktopCatalogStatus ? { catalog: pool.desktopCatalogStatus } : {}) };
   } finally { await pool.stop(); }
 }
 module.exports = { queryModels };

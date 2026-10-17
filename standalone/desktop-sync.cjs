@@ -21,6 +21,7 @@ async function ensureCodexProject(pool, agent) {
   return result.project.id;
 }
 async function registerAgent(agent, launch) {
+  if (agent.backend === 'claude') return { status: 'unsupported', detail: 'Claude Code 使用独立会话；支持终端入口或桌面 Gateway API 配置，尚未同步到 Claude 桌面任务列表。' };
   if (['workbuddy', 'workbuddy-ai'].includes(agent.backend)) return { status: 'unsupported', detail: '已使用本机 WorkBuddy 后端及独立工作区；会话在本应用中管理，桌面任务列表显示尚未验证。' };
   if (agent.backend !== 'codex') return { status: 'unsupported', detail: agent.backend === 'dsh'
     ? 'DSH 会话已使用独立工作区；独立应用尚未连接桌面端 workspaceRegistry，不能保证桌面列表可见。'

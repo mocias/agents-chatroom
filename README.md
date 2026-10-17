@@ -1,6 +1,6 @@
 # Agents Chatroom
 
-本地多 Agent 聊天应用，基于 [dsh-agent-room](https://github.com/mocias/dsh-agent-room) 开发。支持 Codex、DSH、Qoder 单聊与群聊，并提供 WorkBuddy 国内版与 WorkBuddy AI 国际版的实验性本机接入。提供浏览器和 Windows 桌面版。当前版本 **0.1.11**。
+本地多 Agent 聊天应用，基于 [dsh-agent-room](https://github.com/mocias/dsh-agent-room) 开发。支持 Codex、DSH、Qoder 单聊与群聊，支持 Claude Code 终端版和 Claude 桌面 Gateway API 配置接入，并提供 WorkBuddy 国内版与 WorkBuddy AI 国际版的实验性本机接入。提供浏览器和 Windows 桌面版。当前版本 **0.1.22**。
 
 - 微信式联系人和群聊界面，目前只开放 CHAT；支持重命名、Agent 置顶和独立滚动。
 - 输入 @ 选择当前成员或“所有人”，流式回复增量渲染。
@@ -28,6 +28,22 @@ npm run desktop:dist
 ```
 
 桌面构建面向 Windows x64，产物在 `dist/`。安装包未签名，尚无自动升级；用户数据及构建产物不随源码上传。首次安装开发依赖需要下载 Electron。
+
+## Claude Code 接入
+
+在“后端管理”选择 Claude Code。终端版可指定 claude.exe、npm claude.cmd 或 CLI JavaScript 入口；桌面版可选择已配置 Gateway API 的 Claude.exe，桥接会使用该桌面下载的 Code 运行程序及当前用户的 API 配置。
+
+桌面 API 密钥仅由本机桥接进程在内存中读取并传给其子进程，不写入 Room 的后端配置、聊天记录或测试报告。每次新会话读取当前已应用的桌面配置和缓存模型映射，避免终端别名意外指向桌面未使用的新模型。尚未实现 Claude 桌面任务列表同步，也未验证第一方桌面账号登录复用。
+
+接入保留 0.1.17 的身份、私聊、闹钟及群管理逻辑；目前只开放文本 CHAT，禁用工具、hooks 和额外 MCP，未开放推理档位。
+
+**验证：80 项离线检查通过；已安装的 0.1.19 使用桌面 Code 2.1.299 + Gateway API + Haiku，真实返回 CLAUDE_ROOM_OK。本轮仅发送一条测试消息；未做多成员、多模型真实验收。** 详情见 HANDOFF。
+
+检查脚本默认只做初始化及模型选择，不发送生成请求：
+
+    node scripts/check-live-claude.cjs "Claude 程序完整路径" --model=haiku
+
+加 --chat 才发送一条短回复请求，并使用账号额度；验证脚本关闭思考，输出上限 32 tokens。普通用户聊天不受这个测试上限限制。
 
 ## 文档
 
@@ -99,3 +115,5 @@ Agent 或用户在单独消息块发送：
 在左侧群聊上右键，或打开群聊后点击右上角“⋯”，可以重命名、置顶/取消置顶、删除群聊。置顶跨重启保留，同类置顶状态内按最近消息排序。
 
 删除需要确认；仅移除群聊入口，关闭其后端会话并取消待触发闹钟。Agent 联系人、其他会话、工作区、本地历史/附件文件及原后端对话保留，不做文件清理。群聊正在回复或闹钟正在投递时，请等待结束后再删除。
+
+WorkBuddy 模型列表读取已验证运行版本所用配置目录中的在线目录快照，遵循桌面 cli 角色的模型顺序，不再使用安装包静态模型补全。添加 Agent 时或点击“重新读取模型”会重新读取，并显示快照时间；这不会主动触发 WorkBuddy 云端刷新。多个账号缓存无法判定、缺失或格式不兼容时仅显示原生选项并提示。该目录不代表套餐授权，自定义模型配置与桌面的灰显/套餐提示尚未同步。

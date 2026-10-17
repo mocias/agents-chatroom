@@ -150,7 +150,7 @@ function addAgent() {
   $('#workspace-hint').textContent = '留空将创建在 ' + state.workspaceRoot + ' 下；同一 Agent 在各群聊中共用文件夹，对话独立。';
   choose.onclick = async () => { try { const result = await api('/workspace/browse', {}); if (result.path && $('#modal-content [name="workspace"]')) $('#modal-content [name="workspace"]').value = result.path; } catch(error) { toast(error.message); } };
   const select = $('#modal-content select');
-  const hint = () => { const found = state.harnesses.find((h) => h.id === select.value); $('#backend-hint').textContent = found?.found || found?.configured ? '使用本机后端的登录状态。首次发送时连接。' : '可以先添加。聊天前需安装并登录此后端，或在本地后端配置中指定启动路径。'; };
+  const hint = () => { const found = state.harnesses.find((h) => h.id === select.value); $('#backend-hint').textContent = select.value === 'claude' ? '支持终端版，或复用 Claude 桌面端当前 Gateway API 配置；Room 中的会话独立。' : found?.found || found?.configured ? '使用本机后端的登录状态。首次发送时连接。' : '可以先添加。聊天前需安装并登录此后端，或在本地后端配置中指定启动路径。'; };
   let generation = 0;
   const loadModels = async () => {
     hint(); const ticket = ++generation; const backend = select.value;
@@ -161,7 +161,7 @@ function addAgent() {
       const data = await api('/models', { backend, refresh: true });
       if (ticket !== generation || !models.isConnected) return;
       models.innerHTML = data.models.map(m => '<option value="' + escapeHtml(m.id) + '">' + escapeHtml([m.provider, m.name].filter(Boolean).join(' · ')) + '</option>').join('');
-      models.value = data.selected; note.textContent = '模型随 Agent 固定，加入群聊后仅可调整推理强度。'; $('#modal-submit').disabled = !models.value;
+      models.value = data.selected; note.textContent = data.catalog ? (data.catalog.warning || '已读取 WorkBuddy 桌面在线目录快照' + (data.catalog.updatedAt ? '（' + new Date(data.catalog.updatedAt).toLocaleString() + '）' : '') + '；重新读取可同步桌面更新，模型权限由 WorkBuddy 校验。') : backend === 'claude' ? '模型随 Agent 固定；当前 Claude Code 桥接支持文本聊天，未开放推理档位。' : '模型随 Agent 固定，加入群聊后仅可调整推理强度。'; $('#modal-submit').disabled = !models.value;
     } catch (error) { if (ticket !== generation || !models.isConnected) return; models.innerHTML = '<option value="">读取失败</option>'; note.textContent = error.message; }
   };
   select.onchange = loadModels; $('#reload-models').onclick = loadModels; void loadModels();
@@ -195,7 +195,7 @@ async function backendSettings(selectedId = 'codex', force = false) {
     function fields() {
       const row = result.harnesses.find((r) => r.id === $('#backend-id').value);
 
-      $('#backend-status').textContent = [row.detail, row.selected && `来源：${row.selected.source}`, row.warning, ['workbuddy', 'workbuddy-ai'].includes(row.id) && '保持对应 WorkBuddy 桌面已登录并运行，先在桌面发送过一条消息。群聊复用当前 Windows 用户的桌面登录，无需重新授权；其他 Windows 用户需在该用户下运行连接程序。'].filter(Boolean).join(' · ');
+      $('#backend-status').textContent = [row.detail, row.selected && `来源：${row.selected.source}`, row.warning, row.id === 'claude' && '可选择终端版 claude，或已配置 Gateway API 的 Claude 桌面程序。桌面入口使用其内置 Code 与当前 API 配置；密钥不会保存到 Room。', ['workbuddy', 'workbuddy-ai'].includes(row.id) && '保持对应 WorkBuddy 桌面已登录并运行，先在桌面发送过一条消息。群聊复用当前 Windows 用户的桌面登录，无需重新授权；其他 Windows 用户需在该用户下运行连接程序。'].filter(Boolean).join(' · ');
       $('#backend-candidates').innerHTML = '<option value="">选择自动发现的入口</option>' + row.candidates.map((c) => `<option value="${escapeHtml(c.path)}">${escapeHtml(c.source + ' · ' + c.path)}</option>`).join('');
       $('#backend-path').value = row.preference?.path || row.selected?.path || '';
       $('#backend-args').value = row.preference?.args ? JSON.stringify(row.preference.args) : '';
@@ -481,9 +481,7 @@ events.onmessage = (message) => {
 };
 (async () => { try { const location = await api('/data-location'); if (location.warning) toast(location.warning); await refresh(); applyTheme((await api('/theme')).theme); const id = localStorage.getItem('agent-room:selected'); if (state.conversations.some((row) => row.id === id)) await openConversation(id); } catch (error) { toast(error.message); } })();
 
-const alarmButton = document.createElement('button');
-alarmButton.id = 'alarms'; alarmButton.textContent = '◷ 闹钟'; alarmButton.title = '设置、查看和取消当前会话的闹钟';
-$('#mention').after(alarmButton);
+
 async function showAlarms() {
   if (!state.current) return;
   const room = state.current;
@@ -502,4 +500,26 @@ async function showAlarms() {
     };
   } catch (error) { toast(error.message); }
 }
-alarmButton.onclick = showAlarms;
+const toolsToggle = $('#tools-toggle');
+const toolsMenu = $('#tools-menu');
+function closeTools(focus = false) {
+  toolsMenu.hidden = true; toolsToggle.setAttribute('aria-expanded', 'false');
+  if (focus) toolsToggle.focus();
+}
+function openTools(focus = false) {
+  hideMentions(); toolsMenu.hidden = false; toolsToggle.setAttribute('aria-expanded', 'true');
+  if (focus) toolsMenu.querySelector('[role="menuitem"]').focus();
+}
+toolsToggle.onclick = () => toolsMenu.hidden ? openTools(true) : closeTools();
+toolsToggle.onkeydown = e => { if (e.key === 'ArrowDown') { e.preventDefault(); openTools(true); } };
+toolsMenu.onkeydown = e => {
+  const items = [...toolsMenu.querySelectorAll('[role="menuitem"]')];
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+    e.preventDefault(); const index = items.indexOf(document.activeElement);
+    items[e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (index + (e.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length]?.focus();
+  }
+};
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !toolsMenu.hidden) { e.preventDefault(); closeTools(true); } });
+document.addEventListener('pointerdown', e => { if (!e.target.closest('.tools-dropdown')) closeTools(); });
+document.addEventListener('focusin', e => { if (!e.target.closest('.tools-dropdown')) closeTools(); });
+$('#alarms').onclick = () => { closeTools(true); void showAlarms(); };

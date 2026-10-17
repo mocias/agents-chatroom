@@ -78,7 +78,7 @@ async function desktopFixture(t, { endpoint: badEndpoint, createError } = {}) {
     switch (frame.method) {
       case 'initialize': return reply({ protocolVersion: 1, agentCapabilities: {} });
       case 'session/new': return reply({ sessionId: 'session-' + ++sessions, configOptions });
-      case 'session/set_config_option': return reply({ configOptions });
+      case 'session/set_config_option': configOptions[0].currentValue = frame.params.value; return reply({ configOptions });
       case 'session/prompt': {
         const update = { jsonrpc: '2.0', method: 'session/update', params: { sessionId: frame.params.sessionId,
           update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '你好 ' + frame.params.sessionId } } } };
@@ -131,6 +131,37 @@ test('desktop transport reuses bootstrap, applies models, handles both streams a
   assert.equal(pool.pid, null); assert.equal(pool.running, false); assert.equal(pool.threads.size, 0);
   assert.deepEqual(calls.map(c => c.method), ['session.create', 'session.kill']);
   assert.deepEqual(calls[1].params, { sessionId: calls[0].params.sessionId, expectedRuntimeId: 'own-runtime' });
+});
+
+test('desktop online catalogue replaces static presets and applies exact model IDs', async t => {
+  const { pool, frames } = await desktopFixture(t);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-models-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const connect = pool.commandOptions.workbuddyConnect;
+  pool.commandOptions.workbuddyConnect = async () => ({ ...await connect(), configDir: root });
+  fs.mkdirSync(path.join(root, 'local_storage'));
+  const file = path.join(root, 'local_storage', 'wb_entry_d43e96994f944cfb77961c2ea7d04605.info');
+  const save = id => fs.writeFileSync(file, JSON.stringify([{ userId: 'test', ts: Date.now(), data: {
+    agents: [{ name: 'cli', models: [id] }], models: [{ id, name: 'Online model', supportsToolCall: true }],
+  } }]));
+  save('concrete-model');
+  const thread = await pool.openThread('concrete', { model: 'concrete-model', strictModel: true });
+  assert.equal(thread.appliedModel, true);
+  assert.ok(frames.some(f => f.method === 'session/set_config_option' && f.params.value === 'concrete-model'));
+  assert.deepEqual((await pool.listModels()).map(m => m.id), ['concrete-model']);
+  save('updated-model');
+  const other = await pool.request('session/new', { cwd: root, mcpServers: [] });
+  assert.deepEqual(other.configOptions[0].options.map(o => o.value), ['updated-model']);
+  assert.equal(pool.desktopCatalogStatus.source, 'desktop-cache');
+  fs.writeFileSync(file, 'bad json');
+  const fallback = await pool.request('session/new', { cwd: root, mcpServers: [] });
+  assert.deepEqual(fallback.configOptions[0].options.map(o => o.value), ['fast']);
+  assert.ok(pool.desktopCatalogStatus.warning);
+  save('updated-model');
+  const { queryModels } = require('../standalone/models.cjs');
+  const query = await queryModels('workbuddy-ai', { ...pool.commandOptions, workbuddySupervisor: true }, root);
+  assert.equal(query.selected, 'updated-model');
+  assert.ok(frames.some(f => f.method === 'session/set_config_option' && f.params.value === 'updated-model'));
 });
 
 test('a failed desktop launch or invalid endpoint still cleans only the requested runtime', async t => {
