@@ -10,6 +10,8 @@ const { AgentRoom } = require('../lib/room.cjs');
 (async () => {
   const home = fs.mkdtempSync(path.resolve('output/private-chat-ui-'));
   const calls = [];
+  let releaseFirst;
+  const firstReply = new Promise(resolve => { releaseFirst = resolve; });
   const app = createApplication({ dataDir: home, workspaceRoot: path.join(home, 'agents'),
     registerAgent: async () => ({ status: 'registered' }), prepareNativeSession: async () => ({}), afterNativeTurn: async () => {},
     discoveryInventory: async () => ({ rows: [], warning: '' }),
@@ -24,6 +26,7 @@ const { AgentRoom } = require('../lib/room.cjs');
         async runTurn(id, input) {
           const label = room.members.find(m => m.id === id).label;
           calls.push({ label, text: input.text });
+          if (label === '架构师' && !responded) await firstReply;
           let text = label === '架构师' && !responded
             ? '公开结论\n---\n#审查员 secret-ui-789\n---\n@研究员 核对公开资料' : '(无补充)';
           if (label === '架构师' && !alarmResponded && input.text.includes('请设置验收闹钟')) {
@@ -49,23 +52,35 @@ const { AgentRoom } = require('../lib/room.cjs');
     const agents = [];
     for (const label of ['架构师', '审查员', '研究员']) agents.push((await post('/agents', { label, backend: 'codex', model: 'test' })).agent);
     const group = (await post('/groups', { title: '私聊验收', agentIds: agents.map(a => a.id) })).conversation;
+    fs.writeFileSync(path.join(home, 'rooms', group.id + '.log.jsonl'), Array.from({ length: 500 }, (_, i) => JSON.stringify({ id: 'history-' + i, seq: i + 1, kind: 'user', authorId: 'user', authorLabel: '你', text: '历史记录 ' + i, ts: new Date().toISOString(), mentions: [], visibility: 'public' })).join('\n') + '\n');
     browser = await chromium.launch({ channel: 'msedge', headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 850 } });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto(base);
     await page.getByRole('button', { name: /私聊验收/ }).click();
+    await page.locator('.message').nth(499).waitFor();
+    await page.evaluate(() => { window.firstHistoryNode = document.querySelector('.message'); });
     const draft = page.locator('#draft');
     await draft.fill('#架');
     await page.locator('#mention-suggestions button').filter({ hasText: '架构师' }).click();
     assert.equal(await draft.inputValue(), '#架构师 ');
     await draft.fill('@架构师 开始讨论');
     await page.locator('#send').click();
+    await page.waitForFunction(() => document.querySelector('#activity').textContent.includes('架构师 · 正在思考'));
+    assert.equal(await page.locator('[data-live]').count(), 0);
+    assert.equal(await page.locator('#messages').getByText('正在思考', { exact: false }).count(), 0);
+    assert.ok(await page.evaluate(() => window.firstHistoryNode === document.querySelector('.message')));
+    const toolbar = await page.locator('.composer-tools').boundingBox();
+    const activity = await page.locator('#activity').boundingBox();
+    assert.ok(activity.x > toolbar.x + toolbar.width / 2);
+    await page.screenshot({ path: path.join(home, 'thinking-toolbar.png'), fullPage: true });
+    releaseFirst();
     await page.locator('.private-message').waitFor();
     await page.waitForFunction(() => !document.querySelector('#send').disabled && !document.querySelector('.message.live'));
     assert.equal(await page.locator('.private-message').count(), 1);
     assert.match(await page.locator('.private-message').innerText(), /架构师 → 审查员/);
     assert.equal(await page.locator('.private-message .bubble').innerText(), '#审查员 secret-ui-789');
-    assert.equal(await page.locator('.message.user .bubble').first().innerText(), '@架构师 开始讨论');
+    assert.equal(await page.locator('.message.user .bubble').last().innerText(), '@架构师 开始讨论');
     const colors = await page.evaluate(() => ({ private: getComputedStyle(document.querySelector('.private-message .bubble')).backgroundColor, public: getComputedStyle(document.querySelector('.message:not(.private-message):not(.user) .bubble')).backgroundColor }));
     assert.notEqual(colors.private, colors.public);
     await page.reload();
@@ -96,5 +111,5 @@ const { AgentRoom } = require('../lib/room.cjs');
     const report = { passed: true, model: 'simulated', checks: ['# completion', 'mixed reply split', 'private label and # body', 'distinct colors', 'reload persistence', 'invalid recipient draft recovery', 'recipient input marker', 'third agent exclusion', 'no browser errors', 'agent alarm commands', 'private and public system envelopes', 'private alarm recipient isolation', 'alarm list and cancellation'], colors };
     fs.writeFileSync(path.join(home, 'report.json'), JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ home, ...report }));
-  } finally { if (browser) await browser.close(); await app.close(); }
+  } finally { releaseFirst(); if (browser) await browser.close(); await app.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -115,3 +115,33 @@ test('full room skill is loaded once per new session; turn reminder stays short'
   assert.equal(opened.length, 2);
   assert.match(opened[1].developerInstructions, /群聊规则 v2/);
 });
+
+test('direct session receives role and workspace without group membership rules', async t => {
+  const { room, calls, opened } = fixture(t, { kind: 'direct', members: [{ id: 'a', label: '架构师', workspace: process.cwd(), persona: '职责：设计架构' }] });
+  await room.say('你好');
+  const prompt = opened[0].developerInstructions;
+  assert.ok(prompt.includes(process.cwd()));
+  assert.match(prompt, /你的名称是 架构师/);
+  assert.match(prompt, /职责：设计架构/);
+  assert.match(prompt, /一对一交流/);
+  assert.doesNotMatch(prompt, /群聊规则|你已加入群聊/);
+  assert.match(calls[0].input.text, /一对一会话/);
+  await room.say('继续');
+  assert.equal(calls.length, 2, 'direct replies do not wait for the group batching timer');
+  assert.equal(opened.length, 1, 'identity is loaded once per backend session');
+});
+
+test('addressed agents start together before either finishes', { timeout: 3000 }, async t => {
+  const { room, pool } = fixture(t);
+  const started = [];
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  pool.runTurn = async id => {
+    started.push(id);
+    if (started.length === 2) release();
+    await gate;
+    return { text: '(无补充)' };
+  };
+  await room.say('@架构师 @研究员 一起回答');
+  assert.deepEqual(new Set(started), new Set(['a', 'c']));
+});

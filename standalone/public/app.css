@@ -9,3 +9,5 @@ html,body{height:100%;overflow:hidden}.shell{min-height:0;overflow:hidden}.sideb
 .message.private-message .bubble{background:color-mix(in srgb,#9b72cf 18%,var(--ar-panel));border:1px solid color-mix(in srgb,#9b72cf 55%,var(--ar-line));color:var(--ar-text)}
 .private-label{display:block;font-size:11px;color:var(--ar-dim);margin:0 0 6px}
 .alarm-row{padding:14px 0;border-bottom:1px solid var(--ar-line)}.alarm-row p{white-space:pre-wrap;overflow-wrap:anywhere}
+/* Agent activity stays on one line at the right of the composer toolbar. */
+.composer-tools{min-width:0}#activity{flex:0 1 auto;margin-left:auto;min-width:0;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:12px}

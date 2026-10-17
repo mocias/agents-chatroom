@@ -23,11 +23,37 @@ function attachmentsHtml(items, removable = false) {
   return items.map((file, index) => `<span class="file-chip">${file.isImage ? `<img alt="${escapeHtml(file.name)}" src="/api/attachment/${encodeURIComponent(file.id)}">` : '▤'}${escapeHtml(file.name)}${removable ? `<button data-remove-file="${index}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ''}</span>`).join('');
 }
 function renderAttachments() { $('#attachments').innerHTML = attachmentsHtml(state.uploads[state.current] || [], true); }
+const messageNodes = new Map();
+let renderedRoom = null;
 function renderMessages() {
   const panel = $('#messages');
   const stick = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 100;
   const log = state.snapshot?.log || [];
-  panel.innerHTML = log.map((record) => {
+  if (renderedRoom !== state.current) { panel.replaceChildren(); messageNodes.clear(); renderedRoom = state.current; }
+  panel.querySelector('.empty-chat')?.remove();
+  const retained = new Set();
+  let previous = null;
+  for (const [index, record] of log.entries()) {
+    const key = record.id || 'seq:' + (record.seq ?? index); retained.add(key);
+    const html = messageHtml(record);
+    let cached = messageNodes.get(key);
+    if (!cached || cached.html !== html || cached.node.parentNode !== panel) {
+      const template = document.createElement('template'); template.innerHTML = html;
+      const node = template.content.firstElementChild;
+      if (cached?.node.parentNode === panel) cached.node.replaceWith(node);
+      cached = { node, html }; messageNodes.set(key, cached);
+    }
+    const next = previous ? previous.nextSibling : panel.firstChild;
+    if (next !== cached.node) panel.insertBefore(cached.node, next);
+    previous = cached.node;
+  }
+  for (const [key, cached] of messageNodes) if (!retained.has(key)) { cached.node.remove(); messageNodes.delete(key); }
+  updateLiveMessages(panel);
+  if (!panel.children.length) panel.innerHTML = '<div class="empty-chat"><strong>从一句「你好」开始</strong><p>文字、文件、图片，都可以分享。</p></div>';
+  if (stick) panel.scrollTop = panel.scrollHeight;
+  updateActivity();
+}
+function messageHtml(record) {
     if (record.kind === 'system') return `<div class="system-message">${escapeHtml(record.text)}</div>`;
     const isUser = record.kind === 'user';
     const agent = state.agents.find((a) => a.id === record.authorId) || { label: record.authorLabel };
@@ -36,11 +62,6 @@ function renderMessages() {
     const recipients = (record.recipientIds || []).map((id, i) => id === 'user' ? '用户' : (state.agents.find(a => a.id === id)?.label || record.recipientLabels?.[i] || id)).join('、');
     const scope = privateMessage ? `<span class="private-label">私聊 · ${escapeHtml(record.authorLabel)} → ${escapeHtml(recipients)} · 用户可见</span>` : '';
     return `<article class="message ${isUser ? 'user' : ''} ${privateMessage ? 'private-message' : ''}">${isUser ? '<span class="avatar">我</span>' : avatar(agent)}<div class="message-main"><div class="message-meta"><span>${escapeHtml(record.authorLabel)}</span><time>${time(record.ts)}</time></div>${scope}<div class="bubble">${escapeHtml(record.text)}${files}</div></div></article>`;
-  }).join('');
-  updateLiveMessages(panel);
-  if (!panel.children.length) panel.innerHTML = '<div class="empty-chat"><strong>从一句「你好」开始</strong><p>文字、文件、图片，都可以分享。</p></div>';
-  if (stick) panel.scrollTop = panel.scrollHeight;
-  updateActivity();
 }
 // Coalesce streaming updates once per frame without rebuilding history DOM.
 let messageFrame = null;
@@ -63,27 +84,35 @@ function scheduleMessages(full = false) {
 function updateLiveMessages(panel) {
   for (const node of panel.querySelectorAll('[data-live]')) {
     const live = state.live.get(node.dataset.live);
-    if (!live || live.room !== state.current) node.remove();
+    if (!live || live.room !== state.current || !live.text) node.remove();
   }
   for (const [id, live] of state.live) {
-    if (live.room !== state.current) continue;
+    if (live.room !== state.current || !live.text) continue;
     panel.querySelector('.empty-chat')?.remove();
     let node = [...panel.querySelectorAll('[data-live]')].find(n => n.dataset.live === id);
     if (!node) {
       const agent = state.agents.find(a => a.id === live.memberId);
-      node = document.createElement('article'); node.className = 'message'; node.dataset.live = id;
+      node = document.createElement('article'); node.className = 'message live'; node.dataset.live = id;
       node.innerHTML = avatar(agent) + '<div class="message-main"><div class="message-meta">' + escapeHtml(agent?.label || 'Agent') + ' · 生成预览，仅用户可见，完成后投递</div><div class="bubble"></div></div>';
       panel.append(node);
     }
-    const bubble = node.querySelector('.bubble'); const text = live.text || '正在思考…';
+    const bubble = node.querySelector('.bubble'); const text = live.text;
     if (bubble.textContent !== text) bubble.textContent = text;
   }
 }
 function updateActivity() {
-  const busy = state.snapshot?.busy?.length || 0;
-  $('#activity').textContent = state.loading ? '正在上传…' : state.pending.has(state.current) ? '正在处理消息…' : busy ? `${busy} 位 Agent 正在回复…` : '';
+  const ids = new Set(state.snapshot?.busy || []);
+  for (const live of state.live.values()) if (live.room === state.current) ids.add(live.memberId);
+  const labels = [...ids].map(id => {
+    const agent = state.agents.find(a => a.id === id);
+    const live = [...state.live.values()].find(l => l.room === state.current && l.memberId === id);
+    return (agent?.label || 'Agent') + ' · ' + (live?.retry ? '连接重试中' : live?.text ? '正在回复' : '正在思考');
+  });
+  const text = state.loading ? '正在上传…' : labels.length ? labels.join('　｜　') : state.pending.has(state.current) ? (state.snapshot?.connected ? '正在发送…' : '正在连接后端…') : '';
+  if ($('#activity').textContent !== text) $('#activity').textContent = text;
+  $('#activity').title = text;
   $('#send').disabled = !state.snapshot || state.pending.has(state.current) || state.loading > 0;
-  $('#stop').hidden = !busy;
+  $('#stop').hidden = !ids.size;
 }
 async function openConversation(id) {
   hideMentions();
@@ -444,7 +473,8 @@ events.onmessage = (message) => {
   if (data.type === 'stream') {
     const event = data.event;
     if (event.type === 'agent-start') state.live.set(event.liveId, { room: data.room, memberId: event.memberId, text: '' });
-    if (event.type === 'delta') { const live = state.live.get(event.liveId); if (live) live.text += event.delta; }
+    if (event.type === 'delta') { const live = state.live.get(event.liveId); if (live) { live.text += event.delta; live.retry = false; } }
+    if (event.type === 'item' && event.item?.type === 'error') { const live = state.live.get(event.liveId); if (live) live.retry = true; }
     if (event.type === 'agent-end') { state.live.delete(event.liveId); if (event.error) toast('Agent 回复失败：' + event.error); }
     if (data.room === state.current) scheduleMessages();
   }

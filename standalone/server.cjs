@@ -97,7 +97,7 @@ function createApplication(options = {}) {
     for (const backend of detected) if (backend.selected) backends[backend.id] = backend.selected.launch;
     const members = row.agentIds.map((key) => ({ ...catalog.agents.find((agent) => agent.id === key),
       ...(row.efforts && Object.hasOwn(row.efforts, key) ? { effort: row.efforts[key] } : {}) }));
-    const room = factory({ id, title: row.title, members, backend: members[0]?.backend || 'codex',
+    const room = factory({ id, title: row.title, kind: row.kind, members, backend: members[0]?.backend || 'codex',
       createAlarms: (roomId, creatorId, commands) => alarms.createBatch(roomId, creatorId, commands),
       cwd: dataDir, workspaceDirs, backends, codexPath: backends.codex?.codexPath,
       logFile: path.join(roomsDir, id + '.log.jsonl'), mode: 'chat', prewarm: false,
@@ -484,7 +484,7 @@ function createApplication(options = {}) {
         const onlyAlarms = splitMessages(String(body.text || '')).length > 0 && splitMessages(String(body.text || '')).every(block => block.startsWith('/alarm'));
         const state = await runtime(body.room, onlyAlarms);
         if (!state.room.members.length) throw new Error('该群聊已没有 Agent，仅保留历史记录');
-        if (!onlyAlarms) for (const backend of await discovery.scan()) if (backend.status === 'invalid' && state.room.members.some((m) => m.backend === backend.id)) throw new Error(backend.detail);
+        if (!onlyAlarms && !state.room.ready) for (const backend of await discovery.scan()) if (backend.status === 'invalid' && state.room.members.some((m) => m.backend === backend.id)) throw new Error(backend.detail);
         if (configuring) throw new Error('正在更新后端配置，请稍后发送');
         const text = String(body.text || '').trim();
         if (text.length > 50000) throw new Error('消息过长');
