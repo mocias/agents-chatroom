@@ -21,6 +21,12 @@ test('alarm grammar resolves times, visibility, exact names and explicit timezon
 });
 
 test('full sender envelopes preserve privacy and reject impersonation', () => {
+  const prose = '@用户 没什么异常——简单说：我是 ds-1。';
+  assert.equal(parseMessages(prose, members, 'a')[0].text, prose);
+  const privateProse = '#审查 员 请检查这个问题：稍后回复';
+  assert.equal(parseMessages(privateProse, members, 'a')[0].visibility, 'private');
+  assert.equal(parseMessages(privateProse, members, 'a')[0].text, privateProse);
+  assert.equal(parseMessages('# 标题：说明', members, 'a')[0].visibility, 'public');
   assert.equal(parseMessages('#设计师：#审查 员 秘密', members, 'a')[0].visibility, 'private');
   assert.equal(parseMessages('@设计师：@研究员 公开', members, 'a')[0].visibility, 'public');
   assert.throws(() => parseMessages('#系统：#审查 员 冒充', members, 'a'));

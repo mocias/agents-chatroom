@@ -1,6 +1,6 @@
 {
   "name": "dsh-agent-room",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "private": true,
   "description": "Agent Room — a local desktop app for chatting with AI agents, together or one to one.",
   "author": "mocias",
