@@ -3,6 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const MARKER = '.agent-room-migration.json';
+function ensureDirectory(dir) {
+  // mkdirSync('D:\\', { recursive: true }) can return EPERM on Windows even
+  // when the drive exists and its child directories are writable.
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.statSync(dir).isDirectory()) throw new Error('父路径不是文件夹：' + dir);
+}
 const hash = file => {
   const digest = crypto.createHash('sha256'), buffer = Buffer.allocUnsafe(1024 * 1024), fd = fs.openSync(file, 'r');
   try { let count; while ((count = fs.readSync(fd, buffer, 0, buffer.length, null))) digest.update(buffer.subarray(0, count)); return digest.digest('hex'); }
@@ -47,6 +53,16 @@ function validateCopy(source, target) {
   if (!fs.statSync(path.join(target, 'rooms')).isDirectory()) throw new Error('新目录缺少 rooms 文件夹');
   if (fs.existsSync(source) && tree(source) !== tree(target)) throw new Error('目标已有不同内容，请选择空文件夹；不会覆盖已有数据');
 }
+function copyTree(source, target, root = true) {
+  ensureDirectory(target);
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    if (root && entry.name === MARKER) continue;
+    const from = path.join(source, entry.name), to = path.join(target, entry.name);
+    if (entry.isDirectory()) copyTree(from, to, false);
+    else if (entry.isFile()) fs.copyFileSync(from, to, fs.constants.COPYFILE_EXCL);
+    else throw new Error('不支持的数据文件类型：' + from);
+  }
+}
 function migrate(source, target) {
   if (canonical(source) === canonical(target)) return;
   const sourceTree = tree(source);
@@ -61,10 +77,10 @@ function migrate(source, target) {
     fs.writeFileSync(path.join(target, MARKER), JSON.stringify({ source, sourceTree, targetTree: tree(target) }));
     return;
   }
-  fs.mkdirSync(path.dirname(target), { recursive: true });
+  ensureDirectory(path.dirname(target));
   const stage = fs.mkdtempSync(path.join(path.dirname(target), '.agent-room-migration-'));
   // The source is never moved/deleted. Failed staging copies are retained for inspection.
-  fs.cpSync(source, stage, { recursive: true, dereference: false, filter: src => path.relative(source, src) !== MARKER });
+  copyTree(source, stage);
   validateCopy(source, stage);
   remapCatalog(source, target, stage);
   if (tree(source) !== sourceTree) throw new Error('迁移期间源数据发生变化，已保留原目录，请重试');
@@ -82,7 +98,7 @@ function remapCatalog(source, target, stage) {
 function createDataLocation(defaultDir, configFile, options = {}) {
   let config = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, 'utf8')) : {};
   let current = path.resolve(config.current || defaultDir), warning = null;
-  const persist = next => { fs.mkdirSync(path.dirname(configFile), { recursive: true }); const tmp = configFile + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(next, null, 2)); fs.renameSync(tmp, configFile); config = next; };
+  const persist = next => { ensureDirectory(path.dirname(configFile)); const tmp = configFile + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(next, null, 2)); fs.renameSync(tmp, configFile); config = next; };
   if (config.pending) {
     try { const target = validatePath(config.pending, current, options); migrate(current, target); persist({ current: target }); current = target; }
     catch (error) { warning = '自动迁移未完成，仍使用原目录：' + error.message; }

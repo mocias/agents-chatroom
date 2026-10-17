@@ -5,6 +5,14 @@ const path=require('node:path');
 const os=require('node:os');
 const {createDataLocation}=require('../standalone/data-location.cjs');
 function fixture(){const base=fs.mkdtempSync(path.join(os.tmpdir(),'data-location-'));const from=path.join(base,'old');const to=path.join(base,'new');fs.mkdirSync(path.join(from,'rooms'),{recursive:true});fs.writeFileSync(path.join(from,'catalog.json'),JSON.stringify({agents:[{id:'a'}],conversations:[]}));fs.writeFileSync(path.join(from,'rooms','history.log.jsonl'),'history');return {base,from,to,config:path.join(base,'location.json')};}
+test('migration never attempts mkdir on an existing parent (Windows drive-root EPERM)',t=>{
+ const f=fixture();fs.mkdirSync(f.to);const location=createDataLocation(f.from,f.config);location.schedule(f.to);
+ const mkdir=fs.mkdirSync;let attempted=false;
+ t.mock.method(fs,'mkdirSync',(dir,...args)=>{if(path.resolve(dir)===f.base){attempted=true;throw Object.assign(new Error('EPERM mkdir existing drive root'),{code:'EPERM'});}return mkdir(dir,...args);});
+ const migrated=createDataLocation(f.from,f.config);
+ assert.equal(migrated.current,f.to);assert.equal(migrated.status().warning,null);assert.equal(attempted,false);
+ assert.equal(fs.readFileSync(path.join(f.to,'rooms','history.log.jsonl'),'utf8'),'history');
+});
 test('data directory automatically copies on restart; original is retained',()=>{
  const f=fixture();const location=createDataLocation(f.from,f.config);location.schedule(f.to);
  assert.equal(location.current,f.from);assert.equal(fs.existsSync(f.to),false);

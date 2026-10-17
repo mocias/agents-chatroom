@@ -307,3 +307,11 @@ node scripts/check-live-workbuddy-group.cjs "D:\WorkBuddy mocias\WorkBuddyAI.exe
 验证：67/67 自动回归；打包 UI output/group-management-ui-7jhHDd/report.json，安装版 UI output/group-management-ui-nwMZ66/report.json，覆盖置顶排序、重启、顶部菜单、删除取消/确认、清空当前面板；安装版闹钟/退出 output/packaged-alarms-Tyw7io/report.json。测试使用隔离配置，不调用模型，不删除真实群聊。
 
 0.1.13 已通过增量脚本应用到 D:\Agent Room，旧程序备份 .update-backup-0.1.12-2e798f5506394afdaf6ccfa0d2363729。现有 10 个用户数据文件哈希不变，安装的三个补丁文件哈希匹配；完整安装包与 0.1.12→0.1.13 增量 ZIP（209950 字节）位于 dist。首次 NSIS 构建失败，串行重试后构建成功，最终安装版已重新验收。
+
+## 2026-10-17 0.1.14：磁盘根目录下的数据迁移修复
+
+用户选择 D:\agent room data 后失败，源目录仍为 D:\Agent Room\agent room data。复现 Node 在 Windows 上 mkdirSync('D:/', {recursive:true}) 返回 EPERM。新增回归先红后绿；ensureDirectory 对已经存在的目录只检查类型，不执行 mkdir，覆盖迁移目标父目录和配置父目录。
+
+真实 Electron 首轮验证进一步发现 fs.cpSync 在根目录旁临时文件夹执行时进程退出（ECONNRESET，退出码 4294930435），临时副本仍为空；不能把初次测试通过认定为迁移成功。改为显式递归目录并 copyFileSync，拒绝特殊文件且不覆盖目标文件。最终真实安装版启动成功迁移至 D:\agent room data，pending/warning 均为空，证据 output/root-migration-0.1.14.json/png。原目录 10 文件哈希不变；8 个非 catalog/marker 文件在新目录哈希一致。失败产生的两个空临时目录保留，未执行删除。
+
+68/68 回归通过；最终安装版闹钟、重启、退出检查 output/packaged-alarms-37j1VO/report.json。桌面已增量修复至 0.1.14；最终发行增量包基于备份的原 0.1.13 三个程序文件重新生成，不基于中间测试版。源数据未删除。
