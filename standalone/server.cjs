@@ -196,11 +196,18 @@ function createApplication(options = {}) {
         if (await api.handle(req, res, { prefix: '/api' })) return;
       }
       if (route === '/api/data-location') {
-        if (req.method === 'GET') return sendJson(res, 200, { ...(options.dataLocation?.status() || { current: dataDir }), configurable: Boolean(options.dataLocation), canBrowse: Boolean(options.chooseWorkspaceDirectory) });
+        if (req.method === 'GET') return sendJson(res, 200, { ...(options.dataLocation?.status() || { current: dataDir }), configurable: Boolean(options.dataLocation), canBrowse: Boolean(options.chooseWorkspaceDirectory), autoRestart: Boolean(options.restartForMigration) });
         if (req.method === 'POST') {
           if (!options.dataLocation) throw new Error('此启动方式不支持保存数据目录设置');
           const body = await readJsonBody(req);
-          return sendJson(res, 200, body.cancel ? options.dataLocation.cancel() : options.dataLocation.schedule(body.path));
+          if (!body.cancel && [...runtimes.values()].some(s => s.pending || s.room.snapshot().busy.length)) throw new Error('请等待 Agent 回复结束后再迁移数据');
+          const result = body.cancel ? options.dataLocation.cancel() : options.dataLocation.schedule(body.path);
+          sendJson(res, 200, { ...result, restarting: Boolean(result.pending && options.restartForMigration) });
+          if (result.pending && options.restartForMigration) {
+            configuring = true;
+            setTimeout(options.restartForMigration, 200);
+          }
+          return;
         }
       }
       if (req.method === 'GET' && route === '/api/catalog') {

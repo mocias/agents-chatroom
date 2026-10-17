@@ -289,3 +289,13 @@ node scripts/check-live-workbuddy-group.cjs "D:\WorkBuddy mocias\WorkBuddyAI.exe
 最终验证：63/63 自动回归；浏览器 13 项通过 output/private-chat-ui-6uwoud/report.json（真实 UI/引擎、模拟模型）。修复后打包验收 output/packaged-alarms-tehXHi/report.json；实际安装路径验收 output/packaged-alarms-HvelYY/report.json（闹钟、取消、重启无重复、退出无主进程异常；均未调用真实模型）。未验证各真实模型对闹钟文本格式的遵循率。
 
 安装包 dist/Agent-Room-Setup-0.1.11-x64.exe；已通过静默安装将 D:\Agent Room 从 0.1.9 升至 0.1.11.0，桌面快捷方式仍指向原路径。安装后 app.asar 与测试构建哈希一致，9 个既有聊天数据文件哈希未变。旧 exe、app.asar 与数据哈希清单在 output/desktop-backup-20261017-151612。用户文件与 output/dist 不进入 Git 源码提交。
+
+## 2026-10-17 0.1.12：自动迁移与增量更新
+
+数据目录改为由程序在重启时复制、逐文件 SHA-256 校验、切换；失败保留旧目录。兼容旧版已保存的 pending。数据目录内 workspace 路径更新，外部路径保持，清除旧 nativeSessions 以重建并回放历史。目标冲突、相互包含、链接及安装 resources/locales 路径拒绝；源目录从不删除。完成复制后、配置切换前的中断可凭迁移标记恢复。
+
+新增 scripts/build-incremental.cjs 与 desktop/Apply-Update.ps1，按 64 KiB 二进制区块生成差异。更新器预检基准哈希、重建并校验全部文件、正常关闭应用、备份后覆盖，写入失败回滚。只允许应用文件，保留所有用户目录。NSIS 清理改为明确文件清单；增量包同时替换旧卸载器，避免继承旧版递归清理目录的行为。暂为手动下载 ZIP 运行 Update.cmd，不含应用内在线自动更新。
+
+验证：66/66 自动回归；自动迁移 UI output/data-location-ui-eEseKX/report.json（控制重启为先退出再由测试启动，未调用模型）；NSIS 清理隔离验收 output/installer-preserve-CNzXU9/report.json。实际安装 D:\Agent Room 已通过同一增量脚本从 0.1.11 更新到 0.1.12，未执行卸载。安装版闹钟/重启/退出验收 output/packaged-alarms-hZrVzN/report.json，无真实模型调用。用户既有 pending 已在真实启动时自动迁移到 D:\Agent Room\agent room data；原目录 9 文件哈希不变，新目录 8 个非 catalog 文件哈希一致，catalog 移除旧会话绑定。当前目录无 warning/pending，证据 output/installed-migration-0.1.12.json 与 png。
+
+发行包：完整安装包 Agent-Room-Setup-0.1.12-x64.exe；增量 Agent-Room-Update-0.1.11-to-0.1.12-x64.zip（292397 字节，基准必须精确匹配）。本机旧程序备份 D:\Agent Room\.update-backup-0.1.11-c523c2c8f70b4efe9066c3c015460f96。源数据未删除。

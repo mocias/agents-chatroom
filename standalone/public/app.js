@@ -161,7 +161,7 @@ async function backendSettings(selectedId = 'codex', force = false) {
       await api('/backends', { id: $('#backend-id').value, path: $('#backend-path').value, proxy: $('#backend-proxy').value.trim(), ...(args ? { args: JSON.parse(args) } : {}) });
       $('#modal').close(); await refresh(); if (state.current) await openConversation(state.current); toast('后端配置已保存，下次发送时使用；连接与登录尚未验证');
     }, '保存配置');
-    const storageButton = document.createElement('button'); storageButton.type = 'button'; storageButton.id = 'data-location-settings'; storageButton.textContent = '数据目录与手动迁移…'; storageButton.onclick = () => void dataLocationSettings(); $('#modal-content').prepend(storageButton);
+    const storageButton = document.createElement('button'); storageButton.type = 'button'; storageButton.id = 'data-location-settings'; storageButton.textContent = '数据目录与自动迁移…'; storageButton.onclick = () => void dataLocationSettings(); $('#modal-content').prepend(storageButton);
     function fields() {
       const row = result.harnesses.find((r) => r.id === $('#backend-id').value);
 
@@ -188,10 +188,11 @@ async function backendSettings(selectedId = 'codex', force = false) {
 async function dataLocationSettings() {
   try {
     const info = await api('/data-location');
-    showModal('数据目录与手动迁移', '<p>当前数据目录：</p><p class="data-path">' + escapeHtml(info.current) + '</p>' + (info.warning ? '<p class="hint">' + escapeHtml(info.warning) + '</p>' : '') + '<label class="field">下次启动使用的目录<input name="dataPath" required value="' + escapeHtml(info.pending || info.current) + '"></label><button type="button" id="browse-data" ' + (info.canBrowse ? '' : 'hidden') + '>选择文件夹…</button><p class="hint">保存后不会立即切换，也不会自动搬移或删除文件。</p><ol class="hint"><li>保存设置，然后完全退出桌面应用；浏览器版需停止本地服务。</li><li>把当前目录内的全部文件和子文件夹复制到新目录，直接包含 catalog.json、rooms 等，不要再套一层 data。</li><li>重新启动应用。系统校验复制结果，通过后启用新目录；缺失或不一致时继续使用旧目录。</li><li>确认 Agent、历史和附件正常后，再自行决定如何处理旧目录。</li></ol><p class="hint">工作区路径不会自动改变。安装目录下的 agents 或自选工作区仍使用原路径；若旧数据目录内含 workspaces，复制后也需在各 Agent 设置中修改工作区路径。外部后端的登录配置不受影响。</p>' + (info.pending ? '<button type="button" id="cancel-data-change">取消待切换目录</button>' : ''), info.configurable ? async form => {
+    showModal('数据目录与自动迁移', '<p>当前数据目录：</p><p class="data-path">' + escapeHtml(info.current) + '</p>' + (info.warning ? '<p class="hint">' + escapeHtml(info.warning) + '</p>' : '') + '<label class="field">新的数据目录<input name="dataPath" required value="' + escapeHtml(info.pending || info.current) + '"></label><button type="button" id="browse-data" ' + (info.canBrowse ? '' : 'hidden') + '>选择文件夹…</button><p class="hint">请选择空文件夹。' + (info.autoRestart ? '确认后应用将自动重启，复制并校验数据，再启用新目录。' : '保存后请重启服务，程序会自动复制并校验数据，再启用新目录。') + '数据较多时启动需要稍等。</p><p class="hint">旧目录会保留；迁移失败时继续使用旧目录，不会覆盖目标中的不同内容。数据目录内的工作区会随迁移更新路径，外部工作区保持原路径。</p>' + (info.pending ? '<button type="button" id="cancel-data-change">取消待切换目录</button>' : ''), info.configurable ? async form => {
       const result = await api('/data-location', { path: new FormData(form).get('dataPath') });
-      await dataLocationSettings(); toast(result.pending ? '已保存。请退出应用、手动复制文件，再重新启动。' : '继续使用当前数据目录');
-    } : null, '保存，下次启动生效');
+      if (result.restarting) { toast('即将重启并自动迁移，请稍候…'); return; }
+      await dataLocationSettings(); toast(result.pending ? '已保存，重启服务后将自动迁移。' : '继续使用当前数据目录');
+    } : null, info.autoRestart ? '迁移并重启' : '保存，重启后自动迁移');
     $('#browse-data').onclick = async () => { try { const result = await api('/workspace/browse', {}); if (result.path) $('#modal-content [name="dataPath"]').value = result.path; } catch(e) { $('#modal-error').textContent = e.message; } };
     if ($('#cancel-data-change')) $('#cancel-data-change').onclick = async () => { try { await api('/data-location', { cancel: true }); await dataLocationSettings(); } catch(e) { $('#modal-error').textContent = e.message; } };
   } catch(e) { toast(e.message); }

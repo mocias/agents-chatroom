@@ -55,12 +55,13 @@ function makeMenu(dataDir) {
   ]));
 }
 async function start() {
-  const dataLocation = createDataLocation(path.join(app.getPath('userData'), 'data'), path.join(app.getPath('userData'), 'data-location.json'));
+  const dataLocation = createDataLocation(path.join(app.getPath('userData'), 'data'), path.join(app.getPath('userData'), 'data-location.json'), { installDir: app.isPackaged ? path.dirname(app.getPath('exe')) : path.resolve(__dirname, '..') });
   const dataDir = dataLocation.current;
   const stateFile = path.join(app.getPath('userData'), 'window.json');
   const token = randomBytes(32).toString('hex');
   const workspaceRoot = process.env.AGENT_ROOM_WORKSPACE_ROOT || path.join(app.isPackaged ? path.dirname(app.getPath('exe')) : path.resolve(__dirname, '..'), 'agents');
-  service = createApplication({ dataDir, dataLocation, workspaceRoot, accessToken: token, chooseBackendFile: async () => {
+  service = createApplication({ dataDir, dataLocation, workspaceRoot, accessToken: token,
+    restartForMigration: () => { app.relaunch(); app.quit(); }, chooseBackendFile: async () => {
     const result = await dialog.showOpenDialog(window, { title: '选择 Agent 后端程序', properties: ['openFile'], filters: [{ name: '后端程序', extensions: ['exe', 'cmd', 'js', 'cjs', 'mjs'] }] });
     return result.canceled ? null : result.filePaths[0];
   }, chooseWorkspaceDirectory: async () => {

@@ -9,7 +9,9 @@ fs.mkdirSync(path.join(install, 'agents', 'codex', 'test'), { recursive: true })
 fs.mkdirSync(path.join(install, 'resources'));
 fs.writeFileSync(path.join(install, 'agents', 'codex', 'test', 'keep.txt'), 'workspace');
 fs.writeFileSync(path.join(install, 'resources', 'app.asar'), 'fixture');
-fs.writeFileSync(path.join(install, 'app.exe'), 'fixture');
+fs.writeFileSync(path.join(install, 'Agent Room.exe'), 'fixture');
+fs.mkdirSync(path.join(install, 'agent room data'));
+fs.writeFileSync(path.join(install, 'agent room data', 'catalog.json'), 'keep data');
 const cache = process.env.ELECTRON_BUILDER_CACHE || path.join(process.env.LOCALAPPDATA, 'electron-builder', 'Cache');
 const candidates = fs.readdirSync(cache).filter(name => name.startsWith('nsis')).flatMap(name => {
   const dir = path.join(cache, name);
@@ -36,7 +38,8 @@ execFileSync(compiler, ['/V2', source], { windowsHide: true });
 assert.ok(install.startsWith(path.resolve('output') + path.sep));
 execFileSync(exe, ['/S'], { windowsHide: true, timeout: 30000 });
 assert.equal(fs.readFileSync(path.join(install, 'agents', 'codex', 'test', 'keep.txt'), 'utf8'), 'workspace');
-assert.equal(fs.existsSync(path.join(install, 'app.exe')), false);
+assert.equal(fs.existsSync(path.join(install, 'Agent Room.exe')), false);
 assert.equal(fs.existsSync(path.join(install, 'resources')), false);
+assert.equal(fs.readFileSync(path.join(install, 'agent room data', 'catalog.json'), 'utf8'), 'keep data');
 fs.writeFileSync(path.join(root, 'report.json'), JSON.stringify({ ok: true, install, agentsPreserved: true, appFilesRemoved: true }, null, 2));
 console.log(root + ': installer removal macro preserved agents and removed only application fixtures');
