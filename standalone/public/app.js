@@ -136,6 +136,7 @@ async function openConversation(id) {
   } catch (error) { if (state.current === id) $('#messages').textContent = error.message; toast(error.message); }
 }
 function showModal(title, content, submit, submitLabel = '确定') {
+  $('#modal').classList.toggle('history-dialog', title === '聊天记录');
   $('#modal-title').textContent = title; $('#modal-content').innerHTML = content; $('#modal-error').textContent = '';
   $('#modal-footer').hidden = !submit; $('#modal-submit').textContent = submitLabel; $('#modal-submit').disabled = false;
   onSubmit = submit; $('#modal').showModal();
@@ -523,3 +524,52 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !toolsMenu
 document.addEventListener('pointerdown', e => { if (!e.target.closest('.tools-dropdown')) closeTools(); });
 document.addEventListener('focusin', e => { if (!e.target.closest('.tools-dropdown')) closeTools(); });
 $('#alarms').onclick = () => { closeTools(true); void showAlarms(); };
+
+function showHistory(roomId = '') {
+  showModal('聊天记录', '<div class="history-controls"><label class="field">会话范围<select id="history-scope"><option value="">全部会话</option>' + state.conversations.map(c => '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(c.title) + (c.kind === 'group' ? ' · 群聊' : ' · 单聊') + '</option>').join('') + '</select></label><div class="history-query"><input id="history-query" type="search" maxlength="200" placeholder="搜索正文、发送者或附件名称" aria-label="搜索聊天记录"><button id="history-find" type="button">搜索</button></div></div><div class="history-export"><button type="button" data-export="md">导出 Markdown</button><button type="button" data-export="json">导出 JSON</button></div><p class="hint">导出所选会话的全部记录（不受搜索词限制），包含用户可见的私聊；附件仅记录名称，不包含原文件。请选择一个会话后导出。</p><p id="history-count" class="hint" role="status"></p><div id="history-results"></div><div class="history-pages"><button id="history-prev" type="button">上一页</button><button id="history-next" type="button">下一页</button></div>', null);
+  const scope = $('#history-scope'), query = $('#history-query'), list = $('#history-results'), count = $('#history-count');
+  const previous = $('#history-prev'), next = $('#history-next');
+  scope.value = roomId; let offset = 0, generation = 0;
+  const highlight = text => {
+    const value = String(text), needle = query.value.trim();
+    if (!needle) return escapeHtml(value);
+    const lower = value.toLocaleLowerCase(), wanted = needle.toLocaleLowerCase();
+    let from = 0, found, html = '';
+    while ((found = lower.indexOf(wanted, from)) !== -1) {
+      html += escapeHtml(value.slice(from, found)) + '<mark>' + escapeHtml(value.slice(found, found + needle.length)) + '</mark>'; from = found + needle.length;
+    }
+    return html + escapeHtml(value.slice(from));
+  };
+  async function search() {
+    const ticket = ++generation;
+    previous.disabled = next.disabled = true; count.textContent = '正在搜索…'; list.replaceChildren();
+    for (const button of document.querySelectorAll('[data-export]')) button.disabled = !scope.value;
+    try {
+      const data = await api('/history/search?' + new URLSearchParams({ room: scope.value, q: query.value.trim(), offset }));
+      if (ticket !== generation || !list.isConnected || !$('#modal').open) return;
+      count.textContent = `共 ${data.total} 条记录` + (data.total ? ` · 当前 ${offset + 1}–${offset + data.results.length}` : '') + (data.skipped ? ` · ${data.skipped} 条损坏记录无法读取` : '');
+      list.innerHTML = data.results.length ? data.results.map(m => '<article class="history-result ' + (m.visibility === 'private' ? 'private-history' : '') + '"><div class="history-meta"><strong>' + escapeHtml(m.title) + '</strong><time>' + escapeHtml(m.ts ? new Date(m.ts).toLocaleString() : '') + '</time></div><div class="hint">' + highlight(m.authorLabel) + ' · ' + (m.visibility === 'private' ? '私聊 → ' + escapeHtml(m.recipients.join('、') || '指定接收者') : '公开') + '</div><pre>' + highlight(m.text) + '</pre>' + m.attachments.map(f => '<div class="file-chip">附件：' + highlight(f.name) + '</div>').join('') + '</article>').join('') : '<p class="empty-list">没有找到聊天记录</p>';
+      previous.disabled = offset === 0; next.disabled = offset + data.limit >= data.total;
+    } catch (e) { if (ticket === generation && count.isConnected) count.textContent = e.message; }
+  }
+  $('#history-find').onclick = () => { offset = 0; void search(); };
+  query.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); offset = 0; void search(); } };
+  scope.onchange = () => { offset = 0; void search(); };
+  previous.onclick = () => { offset = Math.max(0, offset - 40); void search(); };
+  next.onclick = () => { offset += 40; void search(); };
+  for (const button of document.querySelectorAll('[data-export]')) button.onclick = async () => {
+    const id = scope.value, format = button.dataset.export; if (!id) return;
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/history/export?' + new URLSearchParams({ room: id, format }));
+      if (!response.ok) throw new Error((await response.json()).error || '导出失败');
+      const url = URL.createObjectURL(await response.blob()), link = document.createElement('a');
+      link.href = url; link.download = (state.conversations.find(c => c.id === id)?.title || '会话').replace(/[\\/:*?"<>|\r\n]/g, '_') + '-聊天记录.' + format;
+      document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { toast(e.message); }
+    finally { button.disabled = !scope.value; }
+  };
+  void search(); query.focus();
+}
+$('#history-all').onclick = () => showHistory();
+$('#history-current').onclick = () => showHistory(state.current);

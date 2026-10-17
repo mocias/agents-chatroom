@@ -426,3 +426,11 @@ WorkBuddy 原生 CLI 默认角色仅列四档。实验表明 web-ui header + mod
 82/82 回归 output/tests-0.1.22.log；最终打包界面交互 output/composer-ui-ByLsOl，覆盖图标尺寸/悬浮、菜单键盘与外部关闭、闹钟弹窗、草稿保留、窄屏边界、提及和独立滚动。打包闹钟/退出/重启 output/packaged-alarms-8n7NBj；Claude 模拟协议打包验证 output/claude-packaged-ySbBdP（有/无系统 Node），不是新增真实模型调用。
 
 本地 D:/Agent Room 已应用 0.1.21→0.1.22 增量更新并启动，更新文件 SHA-256 全部匹配；备份 .update-backup-0.1.21-d7d27d1bfb364487931eeffc2fb4293f。未卸载或改动真实聊天内容。发布目标是 agents-chatroom/main，不是 origin/master。
+
+## 2026-10-17 0.1.23：历史搜索与导出
+
+左侧“搜索聊天记录”覆盖全部现存会话，聊天标题栏“聊天记录”默认当前会话。按正文/作者/附件名进行不区分大小写的字面搜索，40 条分页；支持单聊与群聊完整 Markdown/JSON 导出，不受搜索词过滤。明确包含用户可见私聊和附件元数据、不包含附件原文件。直接异步逐行读取持久化日志，不启动模型；导出固定读取字节边界，遵循响应背压；损坏行计数提示，字段白名单不暴露附件路径/内部状态。
+
+新增 checks/history.test.cjs 与 scripts/check-history-ui.cjs。打包 UI 真实搜索/分页/高亮/安全转义与 Electron 下载完成内容验证：output/history-ui-7RgKDL。原工具栏和闹钟回归：output/composer-ui-x4HibN、output/packaged-alarms-LTfX8w。全量并发检查既有 WorkBuddy 群路由出现间歇超时；最终并发 83/83，移除临时诊断后串行 83/83（output/tests-0.1.23-serial.log），未宣称修复旧竞态。
+
+本地 D:/Agent Room 已从 0.1.22 增量升级至 0.1.23，全部更新文件哈希匹配并已启动；备份 .update-backup-0.1.22-798d23efe1e941c8bbbfdd824a2f911d。

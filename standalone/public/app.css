@@ -44,3 +44,14 @@ button:not(:disabled):hover{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--a
 .composer footer{padding-top:6px}
 @media(max-width:760px){.composer{margin:0 10px 10px;padding:10px}.composer-tools{gap:3px}.composer-tools .tool-button{padding:7px}.composer-tools .tool-button span{display:none}#tools-menu{left:0;right:auto;min-width:200px}#activity{font-size:11px}}
 @media(prefers-reduced-motion:reduce){button,.composer,.search{transition:none}}
+.history-entry{margin:-8px 20px 14px;text-align:left;align-self:flex-start;font-size:12px}
+dialog.history-dialog{width:760px}
+dialog.history-dialog #modal-form{display:flex;flex-direction:column;max-height:calc(90dvh - 52px)}
+dialog.history-dialog #modal-form>header{flex-shrink:0}
+dialog.history-dialog #modal-content{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+dialog.history-dialog #modal-content>*{flex-shrink:0}
+dialog.history-dialog #history-results{flex:1 1 auto;min-height:100px;max-height:none}
+dialog.history-dialog #modal-error:empty{display:none}
+.history-controls .field{margin-top:0}.history-query{display:flex;gap:8px}.history-query input{min-width:0;flex:1;padding:10px;border:1px solid var(--ar-line);border-radius:8px;background:var(--ar-bg);color:var(--ar-text);font-size:13px}
+.history-export,.history-pages{display:flex;gap:8px;margin:14px 0}.history-export button,.history-pages button,.history-query button{font-size:12px}.history-pages{justify-content:flex-end}
+#history-results{max-height:42dvh;overflow:auto;overscroll-behavior:contain}.history-result{border:1px solid var(--ar-line);border-radius:10px;padding:14px;margin-bottom:10px;background:var(--ar-bg)}.history-result.private-history{border-color:color-mix(in srgb,#9b72cf 55%,var(--ar-line))}.history-meta{display:flex;justify-content:space-between;gap:10px;font-size:12px}.history-meta time{color:var(--ar-dim);font-size:11px}.history-result pre{font:inherit;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;line-height:1.8}.history-result mark{background:#f8db78;color:#292518;border-radius:2px}

@@ -24,7 +24,7 @@ const assert = require('node:assert/strict');
     app = await _electron.launch({ executablePath, env });
     await watchErrors(app);
     let page = await app.firstWindow();
-    const version = await app.evaluate(({ app }) => app.getVersion()); assert.equal(version, '0.1.22');
+    const version = await app.evaluate(({ app }) => app.getVersion()); assert.equal(version, '0.1.23');
     await page.getByRole('button', { name: /桌面闹钟验收/ }).click();
     await page.locator('#draft').fill('/alarm 1s #用户 desktop-reminder'); await page.locator('#send').click();
     await page.locator('#messages').getByText(/^#用户 当前时间为：.*desktop-reminder/).waitFor();

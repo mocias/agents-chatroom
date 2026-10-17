@@ -10,6 +10,7 @@ const { RoomApi, readJsonBody, sendJson, sendText } = require('../lib/server.cjs
 const { harnessIds } = require('../lib/harnesses.cjs');
 const { BackendDiscovery } = require('./discovery.cjs');
 const { queryModels } = require('./models.cjs');
+const { searchHistory, exportHistory } = require('./history.cjs');
 const { createDataLocation } = require('./data-location.cjs');
 const { chooseWorkspace, assertDeletable } = require('./workspaces.cjs');
 const { ensureCodexProject, registerAgent } = require('./desktop-sync.cjs');
@@ -297,6 +298,31 @@ function createApplication(options = {}) {
         const cleanup = () => { clearInterval(timer); clients.delete(res); };
         res.on('close', cleanup);
         res.on('error', cleanup);
+        return;
+      }
+      if (req.method === 'GET' && route === '/api/history/search') {
+        const id = url.searchParams.get('room');
+        const rows = id ? [conversation(id)] : catalog.conversations.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        const query = (url.searchParams.get('q') || '').trim();
+        if (query.length > 200) throw new Error('搜索内容不能超过 200 个字符');
+        const offset = Number(url.searchParams.get('offset') || 0);
+        if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('无效的分页参数');
+        return sendJson(res, 200, await searchHistory(roomsDir, rows, query, offset));
+      }
+      if (req.method === 'GET' && route === '/api/history/export') {
+        const row = conversation(url.searchParams.get('room'));
+        const format = url.searchParams.get('format') || 'md';
+        if (!['md', 'json'].includes(format)) throw new Error('请选择 Markdown 或 JSON 格式');
+        const filename = String(row.title).replace(/[\\/:*?"<>|\r\n]/g, '_').slice(0, 80) + '-聊天记录.' + format;
+        res.writeHead(200, { 'Content-Type': format === 'json' ? 'application/json; charset=utf-8' : 'text/markdown; charset=utf-8',
+          'Content-Disposition': "attachment; filename=chat-history." + format + "; filename*=UTF-8''" + encodeURIComponent(filename), 'Cache-Control': 'no-store' });
+        try {
+          for await (const chunk of exportHistory(roomsDir, row, format)) {
+            if (res.destroyed) break;
+            if (!res.write(chunk)) await new Promise(resolve => { const done = () => { res.off('drain', done); res.off('close', done); resolve(); }; res.once('drain', done); res.once('close', done); });
+          }
+          res.end();
+        } catch { res.destroy(); }
         return;
       }
       if (req.method === 'GET' && route === '/api/conversation') {
