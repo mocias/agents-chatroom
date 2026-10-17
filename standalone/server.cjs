@@ -38,6 +38,7 @@ function createApplication(options = {}) {
   const api = new RoomApi({ roomsDir, idleRoomTtlMs: 0, maxUploadBytes: 20 * 1024 * 1024 });
   if (!fs.existsSync(path.join(dataDir, 'agent-room-theme', 'theme.json'))) api.theme.update({ preset: 'paper' });
   const runtimes = new Map();
+  const deletingRooms = new Set();
   const syncingAgents = new Set();
   const modelCache = new Map();
   async function modelsFor(id, model, refresh = false) {
@@ -82,13 +83,14 @@ function createApplication(options = {}) {
   if (catalog.agents.some(a => !a.workspace)) save({ ...catalog, agents: catalog.agents.map(a => a.workspace ? a : { ...a, workspace: workspaceDirs[a.backend] || dataDir }) });
   function conversation(id) {
     const found = catalog.conversations.find((row) => row.id === id);
-    if (!found) throw Object.assign(new Error('会话不存在'), { status: 404 });
+    if (!found || deletingRooms.has(id)) throw Object.assign(new Error('会话不存在或正在删除'), { status: 404 });
     return found;
   }
   async function runtime(id, allowUnavailable = false) {
     const row = conversation(id);
     if (runtimes.has(id)) return runtimes.get(id);
     const detected = await discovery.scan();
+    conversation(id); // Do not resurrect a room removed while discovery was pending.
     if (!allowUnavailable && !options.roomFactory && !discovery.allowAuto && row.agentIds.some(key => !detected.find(b => b.id === catalog.agents.find(a => a.id === key)?.backend)?.found)) throw new Error('请先在后端管理中允许扫描或手动配置程序路径');
     if (runtimes.has(id)) return runtimes.get(id);
     const backends = {};
@@ -157,6 +159,7 @@ function createApplication(options = {}) {
   }, 60000);
   sweeper.unref();
   const alarms = new AlarmStore(path.join(dataDir, 'alarms.json'), async alarm => {
+    if (configuring) throw new Error('正在更新会话配置，稍后重试');
     const row = catalog.conversations.find(c => c.id === alarm.roomId);
     if (!row || (!['user', 'all'].includes(alarm.targetId) && !row.agentIds.includes(alarm.targetId))) return false;
     const state = await runtime(alarm.roomId, true);
@@ -361,10 +364,29 @@ function createApplication(options = {}) {
       if (req.method === 'POST' && route === '/api/conversation/pin') {
         const body = await readJsonBody(req);
         const row = conversation(body.id);
-        if (row.kind !== 'direct' || typeof body.pinned !== 'boolean') throw new Error('请选择有效的 Agent 和置顶状态');
+        if (typeof body.pinned !== 'boolean') throw new Error('请选择有效的置顶状态');
         if (configuring) throw new Error('正在更新配置，请稍后');
         save({ ...catalog, conversations: catalog.conversations.map(c => c.id === row.id ? { ...c, pinned: body.pinned } : c) });
         changed(); return sendJson(res, 200, { ok: true });
+      }
+      if (req.method === 'POST' && route === '/api/groups/delete') {
+        const body = await readJsonBody(req);
+        const row = conversation(body.id);
+        if (row.kind !== 'group') throw new Error('只能通过此入口删除群聊');
+        if (configuring) throw new Error('正在更新配置，请稍后');
+        const active = runtimes.get(row.id);
+        if (active && (active.pending || active.room.snapshot().busy.length)) throw new Error('请等待群聊回复结束后再删除');
+        if (alarms.items.some(a => a.roomId === row.id && a.id === alarms.activeId)) throw new Error('群聊闹钟正在投递，请稍后删除');
+        configuring = true; deletingRooms.add(row.id);
+        try {
+          if (active) await release(active);
+          runtimes.delete(row.id);
+          const before = alarms.items;
+          alarms.save(before.map(a => a.roomId === row.id && a.status === 'pending' ? { ...a, status: 'cancelled' } : a));
+          try { save({ ...catalog, conversations: catalog.conversations.filter(c => c.id !== row.id) }); }
+          catch (error) { alarms.save(before); throw error; }
+          changed(); return sendJson(res, 200, { ok: true });
+        } finally { deletingRooms.delete(row.id); configuring = false; }
       }
       if (req.method === 'POST' && route === '/api/agents/settings') {
         const body = await readJsonBody(req);

@@ -299,3 +299,11 @@ node scripts/check-live-workbuddy-group.cjs "D:\WorkBuddy mocias\WorkBuddyAI.exe
 验证：66/66 自动回归；自动迁移 UI output/data-location-ui-eEseKX/report.json（控制重启为先退出再由测试启动，未调用模型）；NSIS 清理隔离验收 output/installer-preserve-CNzXU9/report.json。实际安装 D:\Agent Room 已通过同一增量脚本从 0.1.11 更新到 0.1.12，未执行卸载。安装版闹钟/重启/退出验收 output/packaged-alarms-hZrVzN/report.json，无真实模型调用。用户既有 pending 已在真实启动时自动迁移到 D:\Agent Room\agent room data；原目录 9 文件哈希不变，新目录 8 个非 catalog 文件哈希一致，catalog 移除旧会话绑定。当前目录无 warning/pending，证据 output/installed-migration-0.1.12.json 与 png。
 
 发行包：完整安装包 Agent-Room-Setup-0.1.12-x64.exe；增量 Agent-Room-Update-0.1.11-to-0.1.12-x64.zip（292397 字节，基准必须精确匹配）。本机旧程序备份 D:\Agent Room\.update-backup-0.1.11-c523c2c8f70b4efe9066c3c015460f96。源数据未删除。
+
+## 2026-10-17 0.1.13：群聊置顶与删除
+
+群聊右键菜单增加置顶/取消置顶、删除；聊天页增加“群聊管理”按钮。复用 pinned 排序并持久化。删除弹窗说明保留范围，确认后关闭运行会话、取消该群 pending 闹钟、移除 catalog；保留联系人、其他群聊、工作区、本地日志与附件。忙碌回复和投递中的闹钟拒绝删除；异步 discovery 结束后再次检查会话存在性，避免删除后重新创建 runtime。SSE catalog 事件同步清空已删除的当前聊天与选中状态。
+
+验证：67/67 自动回归；打包 UI output/group-management-ui-7jhHDd/report.json，安装版 UI output/group-management-ui-nwMZ66/report.json，覆盖置顶排序、重启、顶部菜单、删除取消/确认、清空当前面板；安装版闹钟/退出 output/packaged-alarms-Tyw7io/report.json。测试使用隔离配置，不调用模型，不删除真实群聊。
+
+0.1.13 已通过增量脚本应用到 D:\Agent Room，旧程序备份 .update-backup-0.1.12-2e798f5506394afdaf6ccfa0d2363729。现有 10 个用户数据文件哈希不变，安装的三个补丁文件哈希匹配；完整安装包与 0.1.12→0.1.13 增量 ZIP（209950 字节）位于 dist。首次 NSIS 构建失败，串行重试后构建成功，最终安装版已重新验收。

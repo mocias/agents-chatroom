@@ -93,6 +93,7 @@ async function openConversation(id) {
   $('#welcome').hidden = true; $('#conversation-view').hidden = false;
   const row = state.conversations.find((c) => c.id === id);
   $('#chat-title').textContent = row.title;
+  $('#group-actions').hidden = row.kind !== 'group';
   $('#chat-subtitle').textContent = row.kind === 'group' ? `${row.agentIds.length} 位 Agent · @ 提及伙伴，让对话接着走` : `${state.agents.find((a) => a.id === row.agentIds[0])?.backend || ''} · 独立对话`;
   $('#draft').value = state.drafts[id] || '';
   $('#messages').innerHTML = '<div class="empty-chat">正在读取聊天记录…</div>';
@@ -258,24 +259,48 @@ $('#conversations').addEventListener('contextmenu', event => {
   const row = state.conversations.find(c => c.id === button?.dataset.room);
   if (!row) return;
   event.preventDefault();
+  showConversationMenu(row, event.clientX, event.clientY);
+});
+$('#group-actions').onclick = () => {
+  const row = state.conversations.find(c => c.id === state.current);
+  const rect = $('#group-actions').getBoundingClientRect();
+  if (row) showConversationMenu(row, rect.left, rect.bottom);
+};
+function showConversationMenu(row, x, y) {
+  closeAgentMenu();
   const agent = row.kind === 'direct' ? state.agents.find(a => a.id === row.agentIds[0]) : null; if (row.kind === 'direct' && !agent) return;
   const menu = document.createElement('div'); menu.id = 'agent-context-menu'; menu.setAttribute('role', 'menu');
   menu.innerHTML = '<button role="menuitem" data-action="pin">' + (row.pinned ? '取消置顶' : '置顶') + '</button><button role="menuitem" data-action="delete">删除</button>';
-  if (row.kind === 'group') menu.innerHTML = '';
+  if (row.kind === 'group') menu.querySelector('[data-action="delete"]').textContent = '删除群聊';
   menu.insertAdjacentHTML('afterbegin', '<button role="menuitem" data-action="rename">重命名</button>');
   document.body.append(menu);
-  menu.style.left = Math.max(0, Math.min(event.clientX, innerWidth - menu.offsetWidth - 8)) + 'px';
-  menu.style.top = Math.max(0, Math.min(event.clientY, innerHeight - menu.offsetHeight - 8)) + 'px';
+  menu.style.left = Math.max(0, Math.min(x, innerWidth - menu.offsetWidth - 8)) + 'px';
+  menu.style.top = Math.max(0, Math.min(y, innerHeight - menu.offsetHeight - 8)) + 'px';
   menu.onclick = async e => {
     const action = e.target.closest('[data-action]')?.dataset.action; if (!action) return;
     closeAgentMenu();
     if (action === 'rename') { renameConversation(row, agent); return; }
-    if (action === 'delete') { deleteAgent(agent); return; }
+    if (action === 'delete') { if (row.kind === 'group') deleteGroup(row); else deleteAgent(agent); return; }
     try { await api('/conversation/pin', { id: row.id, pinned: !row.pinned }); await refresh(); } catch(e) { toast(e.message); }
   };
   menu.addEventListener('keydown', e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const buttons = [...menu.querySelectorAll('button')]; buttons[(buttons.indexOf(document.activeElement) + 1) % buttons.length].focus(); } });
   menu.querySelector('button').focus();
-});
+}
+function clearMissingConversation() {
+  for (const id of Object.keys(state.drafts)) if (!state.conversations.some(c => c.id === id)) { delete state.drafts[id]; delete state.uploads[id]; state.pending.delete(id); state.unread.delete(id); }
+  if (!state.current || state.conversations.some(c => c.id === state.current)) return;
+  state.current = null; state.snapshot = null; state.live.clear();
+  localStorage.removeItem('agent-room:selected');
+  $('#draft').value = ''; $('#messages').replaceChildren(); $('#attachments').replaceChildren();
+  $('#conversation-view').hidden = true; $('#welcome').hidden = false;
+  hideMentions(); closeAgentMenu();
+}
+function deleteGroup(row) {
+  showModal('删除群聊：' + row.title, '<p>将移除这个群聊并取消其待触发闹钟。删除后无法从会话列表打开。</p><p class="hint">Agent 联系人、其他会话、工作区和原后端对话不受影响。本地历史与附件文件保留，不做文件清理。</p>', async () => {
+    await api('/groups/delete', { id: row.id });
+    $('#modal').close(); await refresh(); clearMissingConversation(); toast('群聊已删除');
+  }, '确认删除群聊');
+}
 document.addEventListener('pointerdown', e => { if (!e.target.closest('#agent-context-menu')) closeAgentMenu(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAgentMenu(); });
 window.addEventListener('resize', closeAgentMenu);
@@ -411,7 +436,7 @@ events.onopen = async () => {
 events.onerror = () => { $('#connection').className = ''; $('#connection').innerHTML = '<i></i>连接中断，正在重连'; };
 events.onmessage = (message) => {
   const data = JSON.parse(message.data);
-  if (data.type === 'catalog') { state.agents = data.catalog.agents; state.conversations = data.catalog.conversations; renderList(); }
+  if (data.type === 'catalog') { state.agents = data.catalog.agents; state.conversations = data.catalog.conversations; clearMissingConversation(); renderList(); }
   if (data.type === 'snapshot' && data.room === state.current) { state.snapshot = data.snapshot; scheduleMessages(true); }
   if (data.type === 'message' && data.room !== state.current) { state.unread.add(data.room); renderList(); }
   if (data.type === 'pending') { if (data.pending) state.pending.add(data.room); else state.pending.delete(data.room); updateActivity(); }

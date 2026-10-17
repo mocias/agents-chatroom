@@ -282,6 +282,45 @@ test('agent settings preserve files, persist pins and reject invalid edits', asy
   assert.equal((await reopened.call('/catalog')).data.conversations[0].pinned, false);
 });
 
+test('group pin and deletion persist, cancel only group alarms, retain contacts and reject busy deletion', async t => {
+  const rooms = new Map(), factory = fakeFactory([]);
+  const roomFactory = settings => { const room = factory(settings); rooms.set(settings.id, room); return room; };
+  const env = await start(t, { roomFactory, alarmOptions: { manual: true } });
+  const a = (await env.call('/agents', { label: '甲', backend: 'dsh' })).data;
+  const b = (await env.call('/agents', { label: '乙', backend: 'dsh' })).data;
+  const group = (await env.call('/groups', { agentIds: [a.agent.id,b.agent.id], title: '待删除' })).data.conversation;
+  const other = (await env.call('/groups', { agentIds: [a.agent.id,b.agent.id], title: '保留群' })).data.conversation;
+  fs.writeFileSync(path.join(a.agent.workspace,'keep.txt'),'work');
+  assert.equal((await env.call('/conversation/pin',{id:group.id,pinned:true})).status,200);
+  assert.equal((await env.call('/conversation/pin',{id:group.id,pinned:'yes'})).status,400);
+  await env.call('/say',{room:group.id,text:'/alarm 1h #用户 群提醒'});
+  await env.call('/say',{room:other.id,text:'/alarm 1h #用户 保留提醒'});
+  await until(async()=>!(await env.call('/conversation?id='+group.id)).data.pending);
+  const room=rooms.get(group.id), snapshot=room.snapshot.bind(room);
+  room.snapshot=()=>({...snapshot(),busy:['busy']});
+  assert.equal((await env.call('/groups/delete',{id:group.id})).status,400);
+  room.snapshot=snapshot;
+  assert.equal((await env.call('/groups/delete',{id:a.conversation.id})).status,400);
+  await env.app.close();
+  const next=await start(t,{dataDir:env.dataDir,roomFactory,alarmOptions:{manual:true}});
+  assert.equal((await next.call('/catalog')).data.conversations.find(c=>c.id===group.id).pinned,true);
+  assert.equal((await next.call('/conversation/pin',{id:group.id,pinned:false})).status,200);
+  assert.equal((await next.call('/catalog')).data.conversations.find(c=>c.id===group.id).pinned,false);
+  await next.call('/conversation?id='+group.id);
+  assert.equal((await next.call('/groups/delete',{id:group.id})).status,200);
+  assert.equal((await next.call('/conversation?id='+group.id)).status,404);
+  assert.equal((await next.call('/groups/delete',{id:group.id})).status,404);
+  const alarms=JSON.parse(fs.readFileSync(path.join(env.dataDir,'alarms.json')));
+  assert.equal(alarms.find(x=>x.roomId===group.id).status,'cancelled');assert.equal(alarms.find(x=>x.roomId===other.id).status,'pending');
+  assert.ok(fs.existsSync(path.join(env.dataDir,'rooms',group.id+'.log.jsonl')));
+  assert.equal(fs.readFileSync(path.join(a.agent.workspace,'keep.txt'),'utf8'),'work');
+  await next.app.close();
+  const restored=await start(t,{dataDir:env.dataDir,roomFactory});
+  const catalog=(await restored.call('/catalog')).data;
+  assert.equal(catalog.agents.length,2);assert.equal(catalog.conversations.length,3);
+  assert.ok(catalog.conversations.some(c=>c.id===other.id));assert.ok(!catalog.conversations.some(c=>c.id===group.id));
+});
+
 test('renaming agents and groups persists names without moving workspace or changing history', async t => {
   const env = await start(t, { roomFactory: fakeFactory([]) });
   const a = (await env.call('/agents', { label: '旧名字', backend: 'dsh' })).data;
