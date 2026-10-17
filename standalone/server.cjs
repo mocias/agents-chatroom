@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { AgentRoom } = require('../lib/room.cjs');
+const { AlarmStore } = require('../lib/alarms.cjs');
+const { splitMessages } = require('../lib/message-routing.cjs');
 const { RoomApi, readJsonBody, sendJson, sendText } = require('../lib/server.cjs');
 const { harnessIds } = require('../lib/harnesses.cjs');
 const { BackendDiscovery } = require('./discovery.cjs');
@@ -50,6 +52,7 @@ function createApplication(options = {}) {
     return value;
   }
   const clients = new Set();
+  let closing = false;
   const factory = options.roomFactory || ((settings) => new AgentRoom(settings));
   function save(next) {
     const tmp = catalogFile + '.tmp';
@@ -58,8 +61,12 @@ function createApplication(options = {}) {
     catalog = next;
   }
   function publish(event) {
+    if (closing) return;
     const wire = 'data: ' + JSON.stringify(event) + '\n\n';
-    for (const client of clients) client.write(wire);
+    for (const client of clients) {
+      if (client.destroyed || client.writableEnded) { clients.delete(client); continue; }
+      client.write(wire);
+    }
   }
   function changed() { publish({ type: 'catalog', catalog }); }
   async function syncAgent(agent) {
@@ -78,17 +85,18 @@ function createApplication(options = {}) {
     if (!found) throw Object.assign(new Error('会话不存在'), { status: 404 });
     return found;
   }
-  async function runtime(id) {
+  async function runtime(id, allowUnavailable = false) {
     const row = conversation(id);
     if (runtimes.has(id)) return runtimes.get(id);
     const detected = await discovery.scan();
-    if (!options.roomFactory && !discovery.allowAuto && row.agentIds.some(key => !detected.find(b => b.id === catalog.agents.find(a => a.id === key)?.backend)?.found)) throw new Error('请先在后端管理中允许扫描或手动配置程序路径');
+    if (!allowUnavailable && !options.roomFactory && !discovery.allowAuto && row.agentIds.some(key => !detected.find(b => b.id === catalog.agents.find(a => a.id === key)?.backend)?.found)) throw new Error('请先在后端管理中允许扫描或手动配置程序路径');
     if (runtimes.has(id)) return runtimes.get(id);
     const backends = {};
     for (const backend of detected) if (backend.selected) backends[backend.id] = backend.selected.launch;
     const members = row.agentIds.map((key) => ({ ...catalog.agents.find((agent) => agent.id === key),
       ...(row.efforts && Object.hasOwn(row.efforts, key) ? { effort: row.efforts[key] } : {}) }));
     const room = factory({ id, title: row.title, members, backend: members[0]?.backend || 'codex',
+      createAlarms: (roomId, creatorId, commands) => alarms.createBatch(roomId, creatorId, commands),
       cwd: dataDir, workspaceDirs, backends, codexPath: backends.codex?.codexPath,
       logFile: path.join(roomsDir, id + '.log.jsonl'), mode: 'chat', prewarm: false,
       replyPolicy: row.kind === 'direct' ? 'everyone' : 'addressed', projectName: null,
@@ -148,6 +156,22 @@ function createApplication(options = {}) {
     }
   }, 60000);
   sweeper.unref();
+  const alarms = new AlarmStore(path.join(dataDir, 'alarms.json'), async alarm => {
+    const row = catalog.conversations.find(c => c.id === alarm.roomId);
+    if (!row || (!['user', 'all'].includes(alarm.targetId) && !row.agentIds.includes(alarm.targetId))) return false;
+    const state = await runtime(alarm.roomId, true);
+    state.lastUsed = Date.now();
+    const seen = state.room.log.some(record => record.alarmId === alarm.id);
+    const record = state.room.fireAlarm(alarm);
+    if (!record) return false;
+    if (!seen && record.mentions.length) {
+      state.room.cascadeRemaining = state.room.maxRelayHops;
+      // The reminder is durable before models are woken. Model failures do not
+      // create duplicate reminders or block other due alarms.
+      void state.room._serveNow(record.mentions).catch(error => state.room.pushSystem('闹钟回复失败：' + error.message));
+    }
+    return true;
+  }, options.alarmOptions);
   const assetRoutes = new Set(['/api/theme', '/api/attach', '/api/background', '/api/theme/background']);
   const server = http.createServer(async (req, res) => {
     try {
@@ -160,6 +184,14 @@ function createApplication(options = {}) {
       if (req.headers.origin && req.headers.origin !== `http://${host}`) return sendJson(res, 403, { error: '不允许跨站请求' });
       const url = new URL(req.url, `http://${host}`);
       const route = url.pathname;
+      if (req.method === 'GET' && route === '/api/alarms') {
+        const room = url.searchParams.get('room'); conversation(room);
+        return sendJson(res, 200, { alarms: alarms.items.filter(a => a.roomId === room) });
+      }
+      if (req.method === 'POST' && route === '/api/alarms/cancel') {
+        const body = await readJsonBody(req); conversation(body.room);
+        alarms.cancel(body.id, body.room); return sendJson(res, 200, { ok: true });
+      }
       if (assetRoutes.has(route) || route.startsWith('/api/attachment/')) {
         if (await api.handle(req, res, { prefix: '/api' })) return;
       }
@@ -247,15 +279,18 @@ function createApplication(options = {}) {
         } finally { configuring = false; }
       }
       if (req.method === 'GET' && route === '/api/events') {
+        if (closing) return sendJson(res, 503, { error: '应用正在退出' });
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
         res.write('retry: 1500\n\n');
         clients.add(res);
-        const timer = setInterval(() => res.write(': ping\n\n'), 20000);
-        res.on('close', () => { clearInterval(timer); clients.delete(res); });
+        const timer = setInterval(() => { if (!res.destroyed && !res.writableEnded) res.write(': ping\n\n'); }, 20000);
+        const cleanup = () => { clearInterval(timer); clients.delete(res); };
+        res.on('close', cleanup);
+        res.on('error', cleanup);
         return;
       }
       if (req.method === 'GET' && route === '/api/conversation') {
-        const state = await runtime(url.searchParams.get('id'));
+        const state = await runtime(url.searchParams.get('id'), true);
         state.lastUsed = Date.now();
         return sendJson(res, 200, { snapshot: api._publicSnapshot(state.room.snapshot()), pending: state.pending });
       }
@@ -417,9 +452,10 @@ function createApplication(options = {}) {
       if (req.method === 'POST' && route === '/api/say') {
         if (configuring) throw new Error('正在更新后端配置，请稍后发送');
         const body = await readJsonBody(req);
-        const state = await runtime(body.room);
+        const onlyAlarms = splitMessages(String(body.text || '')).length > 0 && splitMessages(String(body.text || '')).every(block => block.startsWith('/alarm'));
+        const state = await runtime(body.room, onlyAlarms);
         if (!state.room.members.length) throw new Error('该群聊已没有 Agent，仅保留历史记录');
-        for (const backend of await discovery.scan()) if (backend.status === 'invalid' && state.room.members.some((m) => m.backend === backend.id)) throw new Error(backend.detail);
+        if (!onlyAlarms) for (const backend of await discovery.scan()) if (backend.status === 'invalid' && state.room.members.some((m) => m.backend === backend.id)) throw new Error(backend.detail);
         if (configuring) throw new Error('正在更新后端配置，请稍后发送');
         const text = String(body.text || '').trim();
         if (text.length > 50000) throw new Error('消息过长');
@@ -435,7 +471,7 @@ function createApplication(options = {}) {
         sendJson(res, 202, { ok: true });
         void (async () => {
           try {
-            if (!state.room.ready) await state.room.connect({ tolerateFailures: true });
+            if (!onlyAlarms && !state.room.ready) await state.room.connect({ tolerateFailures: true });
             await state.room.say(text, { attachments });
           } catch (error) {
             state.room.pushSystem('发送失败：' + error.message);
@@ -471,8 +507,11 @@ function createApplication(options = {}) {
     }
   });
   async function close() {
+    closing = true;
+    await alarms.close();
     clearInterval(sweeper);
     for (const client of clients) client.end();
+    clients.clear();
     await Promise.all([...runtimes.values()].map(release));
     server.closeAllConnections();
     if (server.listening) await new Promise((resolve) => server.close(resolve));

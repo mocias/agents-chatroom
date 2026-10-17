@@ -5,7 +5,7 @@ module.exports = {
   executableName: 'Agent Room',
   directories: { output: 'dist', buildResources: 'desktop/assets' },
   extraMetadata: { main: 'desktop/main.cjs' },
-  files: ['desktop/main.cjs', 'desktop/assets/icon.ico', 'standalone/**', 'lib/**', 'package.json', 'LICENSE'],
+  files: ['desktop/main.cjs', 'desktop/assets/icon.ico', 'standalone/**', 'lib/**', 'agent-room-skill.md', 'package.json', 'LICENSE'],
   asar: true,
   compression: 'maximum',
   electronLanguages: ['en-US', 'zh-CN', 'zh-TW'],

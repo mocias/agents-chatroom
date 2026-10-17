@@ -26,6 +26,19 @@ function fakeFactory(captured) {
     return room;
   };
 }
+
+test('shutdown with an open SSE connection never publishes to an ended response', async t => {
+  const env = await start(t, { roomFactory: fakeFactory([]) });
+  const agent = (await env.call('/agents', { label: '退出测试', backend: 'codex' })).data.agent;
+  const catalog = (await env.call('/catalog')).data;
+  const chat = catalog.conversations.find(c => c.agentIds.includes(agent.id));
+  await env.call('/conversation?id=' + chat.id);
+  const response = await fetch(env.url + '/api/events');
+  const reader = response.body.getReader(); await reader.read();
+  await env.app.close();
+  await reader.cancel().catch(() => {});
+  await new Promise(resolve => setTimeout(resolve, 20));
+});
 async function start(t, options = {}) {
   const dataDir = options.dataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'agent-room-test-'));
   const app = createApplication({ dataDir, workspaceRoot: path.join(dataDir, 'agents'), registerAgent: async () => ({ status: 'registered' }), prepareNativeSession: async () => ({}), afterNativeTurn: async () => {}, discoveryInventory: async () => ({ rows: [], warning: '' }), ...options });

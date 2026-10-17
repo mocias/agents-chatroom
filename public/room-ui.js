@@ -108,6 +108,7 @@
 .ar-row.system .ar-bubble{background:transparent;border:1px dashed var(--ar-line);color:var(--ar-dim);font-size:12px}
 .ar-row.live .ar-bubble{border-color:var(--ar-accent);border-style:dashed;color:#cbd5e1}
 .ar-row.mentioned .ar-bubble{border-color:#4b5b8a}
+.ar-row.private-message .ar-bubble{background:color-mix(in srgb,#9b72cf 18%,var(--ar-panel));border-color:#9b72cf}
 .ar-mention{color:var(--ar-accent);font-weight:600}
 .ar-tools{display:flex;flex-direction:column;gap:3px;margin-top:2px}
 .ar-tool{font-size:11px;color:var(--ar-dim);font-family:ui-monospace,Consolas,monospace;
@@ -766,15 +767,22 @@
     function rowFor(record) {
       const row = doc.createElement('div');
       row.className = 'ar-row ' + (record.kind || 'agent');
+      if (record.visibility === 'private') row.classList.add('private-message');
       const mine = (snapshot.members || []).find((m) => m.id === record.authorId);
       const who = record.kind === 'user' ? '你' : record.kind === 'system' ? '系统' : '@' + record.authorId;
       const time = record.ts ? new Date(record.ts).toLocaleTimeString() : '';
       row.innerHTML = `<div class="ar-who"><b>${escapeHtml(who)}</b><span>${escapeHtml(time)}</span>${
         mine && mine.model ? `<span class="ar-meta">${escapeHtml(mine.model)}</span>` : ''
       }</div>`;
+      if (record.visibility === 'private') {
+        const label = doc.createElement('div');
+        label.className = 'ar-meta';
+        label.textContent = '私聊 · ' + (record.authorLabel || who) + ' → ' + (record.recipientIds || []).map((id, i) => id === 'user' ? '用户' : ((snapshot.members || []).find(m => m.id === id)?.label || record.recipientLabels?.[i] || id)).join('、') + ' · 用户可见';
+        row.appendChild(label);
+      }
       const bubble = doc.createElement('div');
       bubble.className = 'ar-bubble';
-      bubble.innerHTML = renderText(record.text, snapshot.members || []);
+      bubble.innerHTML = renderText(record.displayText || record.text, snapshot.members || []);
       const files = renderAttachments(record.attachments);
       if (files) bubble.appendChild(files);
       row.appendChild(bubble);

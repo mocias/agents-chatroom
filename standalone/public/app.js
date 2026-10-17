@@ -32,7 +32,10 @@ function renderMessages() {
     const isUser = record.kind === 'user';
     const agent = state.agents.find((a) => a.id === record.authorId) || { label: record.authorLabel };
     const files = (record.attachments || []).map((f) => f.isImage ? `<a href="/api/attachment/${encodeURIComponent(f.id)}" target="_blank" rel="noopener"><img class="message-image" src="/api/attachment/${encodeURIComponent(f.id)}" alt="${escapeHtml(f.name)}"></a>` : `<a class="file-chip" href="/api/attachment/${encodeURIComponent(f.id)}" download="${escapeHtml(f.name)}">▤ ${escapeHtml(f.name)}</a>`).join('');
-    return `<article class="message ${isUser ? 'user' : ''}">${isUser ? '<span class="avatar">我</span>' : avatar(agent)}<div class="message-main"><div class="message-meta"><span>${escapeHtml(record.authorLabel)}</span><time>${time(record.ts)}</time></div><div class="bubble">${escapeHtml(record.text)}${files}</div></div></article>`;
+    const privateMessage = record.visibility === 'private';
+    const recipients = (record.recipientIds || []).map((id, i) => id === 'user' ? '用户' : (state.agents.find(a => a.id === id)?.label || record.recipientLabels?.[i] || id)).join('、');
+    const scope = privateMessage ? `<span class="private-label">私聊 · ${escapeHtml(record.authorLabel)} → ${escapeHtml(recipients)} · 用户可见</span>` : '';
+    return `<article class="message ${isUser ? 'user' : ''} ${privateMessage ? 'private-message' : ''}">${isUser ? '<span class="avatar">我</span>' : avatar(agent)}<div class="message-main"><div class="message-meta"><span>${escapeHtml(record.authorLabel)}</span><time>${time(record.ts)}</time></div>${scope}<div class="bubble">${escapeHtml(record.displayText || record.text)}${files}</div></div></article>`;
   }).join('');
   updateLiveMessages(panel);
   if (!panel.children.length) panel.innerHTML = '<div class="empty-chat"><strong>从一句「你好」开始</strong><p>文字、文件、图片，都可以分享。</p></div>';
@@ -69,7 +72,7 @@ function updateLiveMessages(panel) {
     if (!node) {
       const agent = state.agents.find(a => a.id === live.memberId);
       node = document.createElement('article'); node.className = 'message'; node.dataset.live = id;
-      node.innerHTML = avatar(agent) + '<div class="message-main"><div class="message-meta">' + escapeHtml(agent?.label || 'Agent') + ' · 正在回复</div><div class="bubble"></div></div>';
+      node.innerHTML = avatar(agent) + '<div class="message-main"><div class="message-meta">' + escapeHtml(agent?.label || 'Agent') + ' · 生成预览，仅用户可见，完成后投递</div><div class="bubble"></div></div>';
       panel.append(node);
     }
     const bubble = node.querySelector('.bubble'); const text = live.text || '正在思考…';
@@ -329,20 +332,21 @@ function paintMentions() {
 function updateMentions() {
   const draft = $('#draft'); const caret = draft.selectionStart;
   if (caret !== draft.selectionEnd) { hideMentions(); return; }
-  const prefix = draft.value.slice(0, caret); const start = prefix.lastIndexOf('@');
+  const prefix = draft.value.slice(0, caret); const start = Math.max(prefix.lastIndexOf('@'), prefix.lastIndexOf('#'));
   if (start < 0 || (start > 0 && /[\p{L}\p{N}_]/u.test(prefix[start - 1]))) { hideMentions(); return; }
   const query = prefix.slice(start + 1);
+  const marker = prefix[start];
   if (/[\r\n]/.test(query)) { hideMentions(); return; }
   const row = state.conversations.find(c => c.id === state.current);
   const members = (row?.agentIds || []).map(id => state.agents.find(a => a.id === id)).filter(Boolean);
-  if (row?.kind === 'group' && members.length) members.unshift({ id: '__all__', label: '所有人', backend: 'group' });
+  if (marker === '@' && row?.kind === 'group' && members.length) members.unshift({ id: '__all__', label: '所有人', backend: 'group' });
   const agents = members.filter(a => a.label.toLowerCase().includes(query.toLowerCase()));
   if (!agents.length) { hideMentions(); return; }
-  mentionState = { start, end: caret, agents, index: 0 }; paintMentions();
+  mentionState = { start, end: caret, agents, index: 0, marker }; paintMentions();
 }
 function acceptMention(index) {
   if (!mentionState) return;
-  const draft = $('#draft'); const value = '@' + mentionState.agents[index].label + ' ';
+  const draft = $('#draft'); const value = mentionState.marker + mentionState.agents[index].label + ' ';
   const caret = mentionState.start + value.length;
   draft.value = draft.value.slice(0, mentionState.start) + value + draft.value.slice(mentionState.end);
   state.drafts[state.current] = draft.value; hideMentions(); draft.focus(); draft.setSelectionRange(caret, caret);
@@ -420,3 +424,26 @@ events.onmessage = (message) => {
   }
 };
 (async () => { try { const location = await api('/data-location'); if (location.warning) toast(location.warning); await refresh(); applyTheme((await api('/theme')).theme); const id = localStorage.getItem('agent-room:selected'); if (state.conversations.some((row) => row.id === id)) await openConversation(id); } catch (error) { toast(error.message); } })();
+
+const alarmButton = document.createElement('button');
+alarmButton.id = 'alarms'; alarmButton.textContent = '◷ 闹钟'; alarmButton.title = '设置、查看和取消当前会话的闹钟';
+$('#mention').after(alarmButton);
+async function showAlarms() {
+  if (!state.current) return;
+  const room = state.current;
+  try {
+    const data = await api('/alarms?room=' + encodeURIComponent(room));
+    const status = { pending: '等待触发', fired: '已触发', cancelled: '已取消' };
+    showModal('会话闹钟', '<p class="hint">在输入框发送 /alarm 10m #成员 备注；@成员 为公开提醒。支持 s、m、h、d 或含时区的日期时间。应用关闭时不运行，重启后补发。</p><button type="button" id="alarm-compose">填入闹钟指令</button>' + (data.alarms.length ? data.alarms.slice().reverse().map(a => '<div class="alarm-row"><strong>' + escapeHtml((a.visibility === 'private' ? '#' : '@') + a.targetLabel) + '</strong> · ' + escapeHtml(new Date(a.dueAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })) + ' 北京时间 · ' + status[a.status] + '<p>' + escapeHtml(a.note) + '</p>' + (a.error ? '<p class="hint">投递失败，将重试：' + escapeHtml(a.error) + '</p>' : '') + (a.status === 'pending' ? '<button type="button" data-cancel-alarm="' + escapeHtml(a.id) + '">取消闹钟</button>' : '') + '</div>').join('') : '<p>当前没有闹钟。</p>'), null);
+    $('#alarm-compose').onclick = () => {
+      const row = state.conversations.find(c => c.id === room);
+      const target = state.agents.find(a => a.id === row?.agentIds[0])?.label || '用户';
+      $('#modal').close(); $('#draft').value = '/alarm 10m #' + target + ' 提醒备注'; state.drafts[room] = $('#draft').value; $('#draft').focus();
+    };
+    for (const button of document.querySelectorAll('[data-cancel-alarm]')) button.onclick = async () => {
+      try { await api('/alarms/cancel', { room, id: button.dataset.cancelAlarm }); await showAlarms(); }
+      catch (error) { toast(error.message); }
+    };
+  } catch (error) { toast(error.message); }
+}
+alarmButton.onclick = showAlarms;

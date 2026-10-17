@@ -262,3 +262,30 @@ node scripts/check-live-workbuddy-group.cjs "D:\WorkBuddy mocias\WorkBuddyAI.exe
 复现：node scripts/check-live-codex-launch.cjs <codex.exe绝对路径>；可用 CHECK_BACKEND_PROXY 为隔离应用中的此后端指定代理。会发送一次真实模型请求并使用已有账号额度；报告和数据存入 output/codex-launch-live-*。该脚本跳过原生项目注册，未改变现有联系人/历史。
 
 代理设置 UI 验收：output/proxy-ui-a7GfI8/report.json 与 proxy-settings.png，验证手动配置、保存并重新打开后地址仍保留、切换 WorkBuddy 时禁用代理输入并提示使用桌面配置；测试在独立数据目录执行。
+
+## 2026-10-17 私聊与多消息第一版
+
+用户选择复用现有后端会话，通过收件人过滤实现私聊；用户可见所有消息，不另建私聊会话，也不新增发送消息工具。
+
+- lib/message-routing.cjs：完整输出按代码块外独占一行 --- 拆分；每块开头 #完整显示名 路由至该成员，普通文本与 @ 公开。支持带空格名称、#用户；未知/歧义对象拒绝整批，绝不转公开。
+- room.cjs：记录 visibility、recipientIds、recipientLabels。捕获、附件与重放按稳定 ID 过滤；接收方记录标明私聊双方，正文保留 #接收者。全部块入队后才唤醒接收者，每批对同一目标只触发一次接力。中断输出不发布。
+- 用户多块输入也解析；附件只绑定第一块。无 visibility 的旧记录保持公开，不重新解析历史正文。
+- agent-room-skill.md 为完整统一规则；Codex developerInstructions 与 ACP 首次 prompt 复用已有注入路径。新会话/重建注入，普通轮次仅简短提醒。进程启动读取文件，修改需重启；尚未实现热更新和压缩后检测补发。
+- standalone 输入支持 # 成员补全；私聊淡紫色气泡与文字标识。用户看到的流式输出标为尚未投递的生成预览。原插件 UI 同步添加私聊颜色/标签，但本轮仅实际验收 standalone 页面。
+- 打包配置包含技能文件。未构建新安装包，未升级现有安装。
+
+验证：npm test 56/56（含 6 个新增私聊用例）。隔离真实 Edge + 本机服务 + 真实群聊引擎 + 模拟模型的 scripts/check-private-chat-ui.cjs 验收 9 项通过，证据 output/private-chat-ui-uK5zUx/report.json 与 chat.png；涵盖补全、拆分、接收者标记、第三 Agent 排除、颜色、刷新和失败草稿恢复。未进行真实 harness 模型格式遵循验收。
+
+边界：这是模型消息投递过滤，不是本机文件访问隔离；私聊参与者共用原会话，后续公开发言仍可能引用已知内容，规则只能约束行为。用户可见完整日志和生成过程。
+
+## 2026-10-17 0.1.11：闹钟、统一前缀与桌面升级
+
+新增一次性本地闹钟 `/alarm 10m #成员 备注`，支持 s/m/h/d、带时区的 ISO 时间、公开 @成员/@所有人 和私密 #成员/#用户。Agent 在回复中单独一块输出指令即可调用，创建成功回执只对创建者及用户可见；当前群待触发上限 100、最长 366 天。独立服务持久化 alarms.json，运行期间按秒检查，退出/休眠期间到期的闹钟恢复后补发。事件带 alarmId 并根据已保存历史去重；目标删除则取消。UI 增加闹钟列表与取消。
+
+群聊显示和模型输入统一 @发送者：@接收者 / #发送者：#接收者，发送者由真实会话确定；普通无点名内容是 @发送者：正文。兼容原简写，历史原文保持不变，动态增加 displayText。闹钟到期为系统 authorId 和 kind=alarm，过滤与重放不再把它当 UI-only 状态忽略。当前时间以 Asia/Shanghai 提供。skill 升级 v2；原 DSH 插件宿主未接入闹钟存储，能力提示明确不可用。
+
+打包验收发现并复现退出错误 ERR_STREAM_WRITE_AFTER_END：SSE 已 end，但 room.dispose 再次广播。修复 standalone 服务退出时停止广播、清空连接集合并跳过已结束连接；增加保持 SSE 打开时关闭服务的回归。首次打包验收原先未检查主进程退出异常，其通过记录不能作为最终结果；脚本已增加异常采集和退出后断言。
+
+最终验证：63/63 自动回归；浏览器 13 项通过 output/private-chat-ui-6uwoud/report.json（真实 UI/引擎、模拟模型）。修复后打包验收 output/packaged-alarms-tehXHi/report.json；实际安装路径验收 output/packaged-alarms-HvelYY/report.json（闹钟、取消、重启无重复、退出无主进程异常；均未调用真实模型）。未验证各真实模型对闹钟文本格式的遵循率。
+
+安装包 dist/Agent-Room-Setup-0.1.11-x64.exe；已通过静默安装将 D:\Agent Room 从 0.1.9 升至 0.1.11.0，桌面快捷方式仍指向原路径。安装后 app.asar 与测试构建哈希一致，9 个既有聊天数据文件哈希未变。旧 exe、app.asar 与数据哈希清单在 output/desktop-backup-20261017-151612。用户文件与 output/dist 不进入 Git 源码提交。
