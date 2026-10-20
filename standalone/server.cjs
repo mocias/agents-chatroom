@@ -5,6 +5,8 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { AgentRoom } = require('../lib/room.cjs');
 const { AlarmStore } = require('../lib/alarms.cjs');
+const { PollStore, pollText } = require('../lib/polls.cjs');
+const { PollBroker } = require('../lib/poll-mcp.cjs');
 const { splitMessages } = require('../lib/message-routing.cjs');
 const { RoomApi, readJsonBody, sendJson, sendText } = require('../lib/server.cjs');
 const { harnessIds } = require('../lib/harnesses.cjs');
@@ -14,6 +16,8 @@ const { searchHistory, exportHistory } = require('./history.cjs');
 const { createDataLocation } = require('./data-location.cjs');
 const { chooseWorkspace, assertDeletable } = require('./workspaces.cjs');
 const { ensureCodexProject, registerAgent } = require('./desktop-sync.cjs');
+const { inspectDesktop } = require('./desktop-state.cjs');
+const { createDispatcher } = require('./registration-dispatcher.cjs');
 
 // This host owns contacts and conversations; the existing engine owns turns.
 function createApplication(options = {}) {
@@ -41,6 +45,7 @@ function createApplication(options = {}) {
   const runtimes = new Map();
   const deletingRooms = new Set();
   const syncingAgents = new Set();
+  const registrationTasks = new Map();
   const modelCache = new Map();
   async function modelsFor(id, model, refresh = false) {
     if (!harnessIds().includes(id)) throw new Error('该后端尚未接入模型查询');
@@ -55,6 +60,16 @@ function createApplication(options = {}) {
   }
   const clients = new Set();
   let closing = false;
+  const polls = new PollStore(path.join(dataDir, 'polls.json'), options.pollOptions);
+  const pollBroker = new PollBroker(({ roomId, memberId }, name, args) => {
+    if (closing || configuring) throw new Error('应用正在更新或退出，请稍后重试');
+    const row = conversation(roomId);
+    if (row.kind !== 'group') throw new Error('投票仅在群聊可用');
+    return polls.call(roomId, memberId, name, args, row.agentIds.map(id => catalog.agents.find(a => a.id === id)).filter(Boolean));
+  });
+  polls.on('change', ({ roomId }) => {
+    publish({ type: 'polls', room: roomId, polls: polls.items.filter(p => p.roomId === roomId).map(p => polls.view(p, 'user')) });
+  });
   const factory = options.roomFactory || ((settings) => new AgentRoom(settings));
   function save(next) {
     const tmp = catalogFile + '.tmp';
@@ -71,15 +86,41 @@ function createApplication(options = {}) {
     }
   }
   function changed() { publish({ type: 'catalog', catalog }); }
-  async function syncAgent(agent) {
+  function syncAgent(agent) {
     if (syncingAgents.has(agent.id)) throw new Error('正在同步，请稍后');
     syncingAgents.add(agent.id);
+    const task = (async () => {
     try {
       const row = (await discovery.scan()).find(r => r.id === agent.backend);
-      return await (options.registerAgent || registerAgent)(agent, row?.selected?.launch);
+      const result = await (options.registerAgent || registerAgent)(agent, row?.selected?.launch, { dataDir, conversations: catalog.conversations });
+      await registrationDispatcher.kick();
+      return result;
     } catch (error) { return { status: 'error', detail: '桌面同步失败：' + error.message }; }
     finally { syncingAgents.delete(agent.id); }
+    })();
+    registrationTasks.set(agent.id, task);
+    return task.finally(() => registrationTasks.delete(agent.id));
   }
+  // Registration runs only inside Room. Durable queues resume next launch.
+  const registrationDispatcher = options.nativeRegistration === false || options.roomFactory
+    ? { kick: async () => {}, close: async () => {} }
+    : (options.registrationDispatcher || createDispatcher)(dataDir);
+  const registrationTimers = new Map();
+  function scheduleRegistration(agentId) {
+    if (options.nativeRegistration === false || options.roomFactory || closing) return;
+    clearTimeout(registrationTimers.get(agentId));
+    const timer = setTimeout(async () => {
+      registrationTimers.delete(agentId);
+      const agent = catalog.agents.find(a => a.id === agentId);
+      if (!agent || closing) return;
+      const desktopSync = await syncAgent(agent);
+      if (!closing && catalog.agents.some(a => a.id === agentId && a.workspace === agent.workspace)) {
+        save({ ...catalog, agents: catalog.agents.map(a => a.id === agentId ? { ...a, desktopSync } : a) }); changed();
+      }
+    }, 1500);
+    timer.unref?.(); registrationTimers.set(agentId, timer);
+  }
+  for (const agent of catalog.agents) if (['codex', 'dsh', 'workbuddy', 'workbuddy-ai', 'qoder', 'claude'].includes(agent.backend)) scheduleRegistration(agent.id);
   // Preserve old contacts' actual directories; new contacts get their own folder.
   if (catalog.agents.some(a => !a.workspace)) save({ ...catalog, agents: catalog.agents.map(a => a.workspace ? a : { ...a, workspace: workspaceDirs[a.backend] || dataDir }) });
   function conversation(id) {
@@ -100,6 +141,11 @@ function createApplication(options = {}) {
       ...(row.efforts && Object.hasOwn(row.efforts, key) ? { effort: row.efforts[key] } : {}) }));
     const room = factory({ id, title: row.title, kind: row.kind, members, backend: members[0]?.backend || 'codex',
       createAlarms: (roomId, creatorId, commands) => alarms.createBatch(roomId, creatorId, commands),
+      ...(row.kind === 'group' ? {
+        pollTools: member => pollBroker.bind(id, member.id),
+        pollView: (pollId, actor) => polls.view(polls.find(id, pollId), actor),
+        pollList: () => polls.items.filter(p => p.roomId === id).map(p => polls.view(p, 'user')),
+      } : {}),
       cwd: dataDir, workspaceDirs, backends, codexPath: backends.codex?.codexPath,
       logFile: path.join(roomsDir, id + '.log.jsonl'), mode: 'chat', prewarm: false,
       replyPolicy: row.kind === 'direct' ? 'everyone' : 'addressed', projectName: null,
@@ -126,6 +172,7 @@ function createApplication(options = {}) {
         ...c, nativeSessions: { ...c.nativeSessions, [event.memberId]: { backend: event.backend, id: event.sessionId, cwd: event.cwd } },
       } : c) };
       save(next);
+      scheduleRegistration(event.memberId);
     });
     room.on('update', (snapshot) => publish({ type: 'snapshot', room: id, snapshot: api._publicSnapshot(snapshot) }));
     room.on('stream', (event) => {
@@ -137,7 +184,7 @@ function createApplication(options = {}) {
     });
     room.on('message', (record) => {
       const next = { ...catalog, conversations: catalog.conversations.map((entry) => entry.id !== id ? entry : {
-        ...entry, updatedAt: record.ts, preview: record.text.slice(0, 100),
+        ...entry, updatedAt: record.ts, preview: record.pollId ? '投票：' + (polls.items.find(p => p.id === record.pollId)?.question || record.text).slice(0, 90) : record.text.slice(0, 100),
       }) };
       save(next);
       publish({ type: 'message', room: id, record: api._publicRecord(record) });
@@ -146,6 +193,7 @@ function createApplication(options = {}) {
     return state;
   }
   async function release(state) {
+    pollBroker.revokeRoom(state.room.id);
     if (state.room.tickTimer) clearInterval(state.room.tickTimer);
     if (state.room._groupTimer) clearTimeout(state.room._groupTimer);
     await state.room.dispose();
@@ -176,6 +224,47 @@ function createApplication(options = {}) {
     }
     return true;
   }, options.alarmOptions);
+  let pollTickRunning = null;
+  const announcedPolls = new Set();
+  async function tickPolls() {
+    if (closing || configuring) return;
+    polls.expire();
+    for (const roomId of new Set(polls.items.map(p => p.roomId))) {
+      const row = catalog.conversations.find(c => c.id === roomId);
+      if (!row || deletingRooms.has(roomId)) continue;
+      polls.syncMembers(roomId, row.agentIds);
+      const roomPolls = polls.items.filter(p => p.roomId === roomId);
+      if (roomPolls.every(p => p.status !== 'open' && announcedPolls.has(p.id + ':' + p.status))) continue;
+      const state = await runtime(roomId, true);
+      if (closing || configuring || !catalog.conversations.some(c => c.id === roomId)) return;
+      for (const p of polls.items.filter(p => p.roomId === roomId)) {
+        const phase = p.status;
+        if (!state.room.log.some(r => r.pollId === p.id && r.pollPhase === phase)) {
+          const record = state.room.append({ authorId: 'system', authorLabel: '系统', kind: 'system',
+            pollId: p.id, pollPhase: phase, text: pollText(polls.view(p)) });
+          // Result context is delivered once with no @ relay. Invitations use
+          // separate turns, so ordinary backlog trimming cannot lose them.
+          if (phase === 'closed') for (const member of state.room.members) state.room._addLineToSegment(member, record);
+        }
+        announcedPolls.add(p.id + ':' + phase);
+        if (p.status !== 'open' || options.pollScheduling === false) continue;
+        for (const member of state.room.members) {
+          if (state.pending || member.running || state.room._hasPending(member) || state.room.busy.size >= state.room.maxParallel) continue;
+          if (!polls.claim(p.id, member.id)) continue;
+          state.lastUsed = Date.now();
+          void state.room.inviteToPoll(member, p.id)?.catch(() => {});
+        }
+      }
+    }
+  }
+  const pollTimer = setInterval(() => {
+    if (pollTickRunning || closing) return;
+    pollTickRunning = tickPolls().catch(() => {
+      // Do not expose internal file contents or ballot details on failure.
+      publish({ type: 'poll-error', message: '投票同步暂未完成，将自动重试' });
+    }).finally(() => { pollTickRunning = null; });
+  }, 1000);
+  pollTimer.unref();
   const assetRoutes = new Set(['/api/theme', '/api/attach', '/api/background', '/api/theme/background']);
   const server = http.createServer(async (req, res) => {
     try {
@@ -188,6 +277,20 @@ function createApplication(options = {}) {
       if (req.headers.origin && req.headers.origin !== `http://${host}`) return sendJson(res, 403, { error: '不允许跨站请求' });
       const url = new URL(req.url, `http://${host}`);
       const route = url.pathname;
+      if (req.method === 'GET' && route === '/api/polls') {
+        const row = conversation(url.searchParams.get('room'));
+        return sendJson(res, 200, { polls: polls.list(row.id, 'user') });
+      }
+      if (req.method === 'POST' && ['/api/polls/create', '/api/polls/close', '/api/polls/cancel', '/api/polls/retry'].includes(route)) {
+        if (configuring || closing) throw new Error('应用正在更新或退出');
+        const body = await readJsonBody(req), row = conversation(body.room);
+        if (row.kind !== 'group') throw new Error('投票仅在群聊可用');
+        const members = row.agentIds.map(id => catalog.agents.find(a => a.id === id)).filter(Boolean);
+        if (route.endsWith('/retry')) { polls.retry(row.id, body.id); return sendJson(res, 200, { ok: true }); }
+        const name = 'poll_' + route.split('/').pop();
+        const result = polls.call(row.id, 'user', name, name === 'poll_create' ? body.poll : { poll_id: body.id }, members);
+        return sendJson(res, 200, { poll: result });
+      }
       if (req.method === 'GET' && route === '/api/alarms') {
         const room = url.searchParams.get('room'); conversation(room);
         return sendJson(res, 200, { alarms: alarms.items.filter(a => a.roomId === room) });
@@ -215,7 +318,8 @@ function createApplication(options = {}) {
         }
       }
       if (req.method === 'GET' && route === '/api/catalog') {
-        return sendJson(res, 200, { ...catalog, discoveryChoice, canChooseWorkspace: Boolean(options.chooseWorkspaceDirectory), workspaceRoot, harnesses: discovery.publicRows(await discovery.scan()) });
+        const agents = catalog.agents.map(agent => ({ ...agent, desktopSync: (options.inspectDesktop || inspectDesktop)(agent, { dataDir, conversations: catalog.conversations }) || agent.desktopSync }));
+        return sendJson(res, 200, { ...catalog, agents, discoveryChoice, canChooseWorkspace: Boolean(options.chooseWorkspaceDirectory), workspaceRoot, harnesses: discovery.publicRows(await discovery.scan()) });
       }
       if (req.method === 'POST' && route === '/api/models') {
         const body = await readJsonBody(req);
@@ -445,6 +549,7 @@ function createApplication(options = {}) {
           }) });
           const active = runtimes.get(row.id);
           if (active && Object.hasOwn(body, 'effort')) active.room.members.find(m => m.id === agent.id).effort = body.effort;
+          if (moved) scheduleRegistration(agent.id);
           changed(); return sendJson(res, 200, { ok: true });
         } finally { configuring = false; }
       }
@@ -527,7 +632,7 @@ function createApplication(options = {}) {
         void (async () => {
           try {
             if (!onlyAlarms && !state.room.ready) await state.room.connect({ tolerateFailures: true });
-            await state.room.say(text, { attachments });
+            await state.room.say(text, { attachments, waitForReply: false });
           } catch (error) {
             state.room.pushSystem('发送失败：' + error.message);
             publish({ type: 'failure', room: body.room, text, attachments: attachments.map((a) => api._publicAttachment(a)), error: error.message });
@@ -542,6 +647,7 @@ function createApplication(options = {}) {
       if (req.method === 'POST' && route === '/api/stop') {
         const body = await readJsonBody(req);
         const state = await runtime(body.room);
+        polls.pauseRoom(body.room);
         for (const member of state.room.members) member.segments = [];
         await state.room.interruptAll();
         return sendJson(res, 200, { ok: true });
@@ -562,12 +668,19 @@ function createApplication(options = {}) {
     }
   });
   async function close() {
+    for (const timer of registrationTimers.values()) clearTimeout(timer);
+    registrationTimers.clear();
     closing = true;
+    clearInterval(pollTimer);
+    await pollTickRunning;
+    await pollBroker.close();
+    await registrationDispatcher.close();
     await alarms.close();
     clearInterval(sweeper);
     for (const client of clients) client.end();
     clients.clear();
     await Promise.all([...runtimes.values()].map(release));
+    await Promise.all([...registrationTasks.values()]);
     server.closeAllConnections();
     if (server.listening) await new Promise((resolve) => server.close(resolve));
     await api.dispose();

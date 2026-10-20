@@ -97,6 +97,7 @@ async function start() {
   });
   makeMenu(dataDir);
   await window.loadURL(origin + '/');
+  if (quitting) return;
   if (size.maximized) window.maximize();
   window.show();
 }
@@ -106,6 +107,8 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } });
   app.whenReady().then(start).catch(async (error) => {
+    // Closing during initial navigation cancels loadURL; it is not a startup failure.
+    if (quitting) return;
     dialog.showErrorBox('Agent Room 启动失败', error.message);
     app.quit();
   });

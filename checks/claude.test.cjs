@@ -35,14 +35,14 @@ test('Claude Code discovery accepts native/npm CLI and rejects Claude desktop as
   const service = new BackendDiscovery({ dir: root, inventory: async () => ({ rows: [{ name: 'Claude', exe: desktop }] }), roots: { claude: [path.join(root, 'bin')] }, detect: () => [], lookup: () => null });
   assert.equal((await service.scan()).find(row => row.id === 'claude').selected.path, native);
 });
-test('Claude model query reads actual initialization catalogue and applies only returned choices', async t => {
+test('Claude model query reads actual initialization catalogue and accepts only returned choices', async t => {
   const { cwd, launch } = setup(t);
   const catalogue = await queryModels('claude', launch, cwd, 'opus-test');
   assert.equal(catalogue.selected, 'opus-test');
-  assert.deepEqual(catalogue.models.map(model => model.id), ['sonnet-test', 'opus-test', 'rejected-test']);
+  assert.deepEqual(catalogue.models.map(model => model.id), ['sonnet-test', 'opus-test', 'rejected-test', 'rate-limited-test']);
   assert.deepEqual(catalogue.models[1].efforts, []);
   await assert.rejects(queryModels('claude', launch, cwd, 'made-up'), /可用|模型/);
-  await assert.rejects(queryModels('claude', launch, cwd, 'rejected-test'), /rejected/);
+  assert.equal((await queryModels('claude', launch, cwd, 'rejected-test')).selected, 'rejected-test');
 });
 test('Claude bridge streams without duplicates and isolates per-member model, history and workspace', async t => {
   const { cwd, pool } = setup(t);
@@ -56,6 +56,15 @@ test('Claude bridge streams without duplicates and isolates per-member model, hi
   const next = JSON.parse((await pool.runTurn('a', { text: 'continue' })).text);
   assert.equal(next.previousMarker, true); assert.equal(next.turns, 2); assert.equal(next.hasPersona, false);
   assert.equal(JSON.parse((await pool.runTurn('b', { text: 'continue' })).text).previousMarker, false);
+});
+
+test('Claude catalogue selection does not send model validation requests that can hit 429', async t => {
+  const { cwd, launch, pool } = setup(t);
+  const catalog = await queryModels('claude', launch, cwd, 'rate-limited-test');
+  assert.equal(catalog.selected, 'rate-limited-test');
+  // Discovery is not proof of access: actual session selection must still fail.
+  await assert.rejects(pool.openThread('limited', { cwd, model: catalog.selected, strictModel: true }), /429.*Too many pending requests/);
+  assert.equal(pool.getThread('limited'), undefined);
 });
 test('Claude errors are not successful replies, secrets are redacted and tool requests are denied', async t => {
   const { cwd, pool } = setup(t);
@@ -123,7 +132,7 @@ test('Claude contacts use the real HTTP and bridge path and retain latest group 
   await call('/backends', { id: 'claude', path: cli });
   const one = await call('/agents', { label: 'Claude甲', backend: 'claude', model: 'sonnet-test', persona: 'PERSONA_FIXTURE' });
   const two = await call('/agents', { label: 'Claude乙', backend: 'claude', model: 'opus-test' });
-  assert.equal(one.agent.desktopSync.status, 'unsupported');
+  assert.equal(one.agent.desktopSync.status, 'cli-only');
   assert.notEqual(one.agent.workspace, two.agent.workspace);
   assert.equal(one.agent.effort, null); assert.equal(one.agent.modelLocked, true);
   const group = (await call('/groups', { title: 'Claude协议验收', agentIds: [one.agent.id, two.agent.id] })).conversation;

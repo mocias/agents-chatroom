@@ -54,6 +54,15 @@ function renderMessages() {
   updateActivity();
 }
 function messageHtml(record) {
+    if (record.pollId) {
+      const poll = state.snapshot?.polls?.find(p => p.id === record.pollId);
+      if (poll) {
+        if (record.pollPhase === 'open' || !state.snapshot?.log?.some(r => r.pollId === record.pollId && r.pollPhase === 'open')) return pollHtml(poll);
+        const winners = poll.options.filter(o => poll.winners?.includes(o.id)).map(o => o.text);
+        const summary = poll.status === 'cancelled' ? '已取消' : '已结束，' + (winners.length ? (winners.length > 1 ? '并列最多票：' : '最多票：') + winners.join('、') : '无有效选票');
+        return `<div class="system-message">投票「${escapeHtml(poll.question)}」${escapeHtml(summary)}</div>`;
+      }
+    }
     if (record.kind === 'system') return `<div class="system-message">${escapeHtml(record.text)}</div>`;
     const isUser = record.kind === 'user';
     const agent = state.agents.find((a) => a.id === record.authorId) || { label: record.authorLabel };
@@ -246,6 +255,19 @@ async function memberEffort(agentId, roomId) {
     await refresh(); $('#modal').close(); toast('设置已保存');
   }, '保存设置');
   const select = $('#modal-content [name="effort"]');
+  const syncNote = document.createElement('p'); syncNote.className = 'hint'; syncNote.id = 'desktop-sync-status';
+  syncNote.textContent = agent.desktopSync?.detail || '尚未检查桌面工作区登记。';
+  const syncButton = document.createElement('button'); syncButton.type = 'button'; syncButton.id = 'check-desktop-sync'; syncButton.textContent = '检查桌面登记';
+  $('#modal-content').append(syncNote, syncButton);
+  syncButton.onclick = async () => {
+    syncButton.disabled = true;
+    try {
+      const result = await api('/agents/sync', { id: agentId });
+      syncNote.textContent = result.desktopSync.detail;
+      agent.desktopSync = result.desktopSync;
+    } catch (error) { syncNote.textContent = error.message; }
+    finally { syncButton.disabled = false; }
+  };
   $('#choose-workspace').hidden = !state.canChooseWorkspace;
   $('#choose-workspace').onclick = async () => { try { const result = await api('/workspace/browse', {}); if (result.path && select.isConnected) $('#modal-content [name="workspace"]').value = result.path; } catch(e) { toast(e.message); } };
   try {
@@ -466,6 +488,11 @@ events.onopen = async () => {
 events.onerror = () => { $('#connection').className = ''; $('#connection').innerHTML = '<i></i>连接中断，正在重连'; };
 events.onmessage = (message) => {
   const data = JSON.parse(message.data);
+  if (data.type === 'poll-error') toast(data.message);
+  if (data.type === 'polls' && data.room === state.current && state.snapshot) {
+    state.snapshot.polls = data.polls; scheduleMessages(true);
+    if ($('#modal').open && $('#poll-list')?.dataset.room === data.room) $('#poll-list').innerHTML = pollListHtml(data.polls);
+  }
   if (data.type === 'catalog') { state.agents = data.catalog.agents; state.conversations = data.catalog.conversations; clearMissingConversation(); renderList(); }
   if (data.type === 'snapshot' && data.room === state.current) { state.snapshot = data.snapshot; scheduleMessages(true); }
   if (data.type === 'message' && data.room !== state.current) { state.unread.add(data.room); renderList(); }
@@ -524,6 +551,58 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !toolsMenu
 document.addEventListener('pointerdown', e => { if (!e.target.closest('.tools-dropdown')) closeTools(); });
 document.addEventListener('focusin', e => { if (!e.target.closest('.tools-dropdown')) closeTools(); });
 $('#alarms').onclick = () => { closeTools(true); void showAlarms(); };
+
+function pollHtml(p) {
+  const status = p.status === 'open' && p.invitationsPaused ? '邀请已暂停' : { open: '进行中', closed: '已结束', cancelled: '已取消' }[p.status];
+  const details = p.participants ? '<details><summary>查看记名投票</summary><ul>' + p.participants.map(m => '<li>' + escapeHtml(m.label) + '：' +
+    escapeHtml(m.status === 'voted' ? p.options.find(o => o.id === m.optionId)?.text : { pending: '未投票' + (m.attempts >= 2 ? '（可重试邀请）' : ''), abstained: '弃权', unavailable: '已离开' }[m.status]) + '</li>').join('') + '</ul></details>' : '';
+  const result = p.status === 'closed' ? '<p class="poll-result">结果：' + escapeHtml(p.winners.length ? p.options.filter(o => p.winners.includes(o.id)).map(o => o.text).join('、') + (p.winners.length > 1 ? '（并列）' : '') : '无有效选票') + '</p>' : '';
+  const privacy = p.visibility !== 'anonymous' ? '' : p.status === 'cancelled' ? '投票已取消，不公布匿名选票。' : p.status === 'closed' ? '已公布汇总结果，投票人保持匿名。' : '匿名选择不向群成员和用户界面公开；结束后揭晓票数。';
+  return `<article class="poll-card" data-poll="${escapeHtml(p.id)}">
+    <header><span class="poll-badge">${p.visibility === 'anonymous' ? '匿名投票' : '公开投票'}</span><span>${status}</span></header>
+    <h3>${escapeHtml(p.question)}</h3><p class="hint">${escapeHtml(p.creatorLabel)} 发起 · ${p.completed}/${p.total} 位已参与</p>
+    <ul class="poll-options">${p.options.map(o => `<li><span>${escapeHtml(o.text)}</span><strong>${o.count === undefined ? (p.status === 'cancelled' ? '不公布' : '待揭晓') : o.count + ' 票'}</strong></li>`).join('')}</ul>
+    ${result}${details}<p class="hint">${privacy ? privacy + '<br>' : ''}截止：${escapeHtml(new Date(p.closesAt).toLocaleString('zh-CN'))}${p.abstained === undefined ? '' : ' · 弃权 ' + p.abstained + ' 位'}
+    ${p.status === 'open' && p.needsRetry ? '<br>' + p.needsRetry + ' 位已邀请但尚未完成，可重试邀请。' : ''}
+    ${p.unavailableCount ? '<br>' + p.unavailableCount + ' 位已离开，保留原参与人数。' : ''}</p>
+    ${p.status === 'open' && p.canManage ? `<footer><button type="button" data-poll-action="retry" data-poll-id="${escapeHtml(p.id)}">重试邀请</button><button type="button" data-poll-action="close" data-poll-id="${escapeHtml(p.id)}">结束投票</button><button type="button" data-poll-action="cancel" data-poll-id="${escapeHtml(p.id)}">取消投票</button></footer>` : ''}</article>`;
+}
+function pollListHtml(polls) { return polls.length ? polls.slice().reverse().map(pollHtml).join('') : '<p class="hint">还没有投票。Agent 也可以通过投票工具发起。</p>'; }
+async function showPolls() {
+  const room = state.current;
+  if (state.conversations.find(c => c.id === room)?.kind !== 'group') { toast('投票仅在群聊可用'); return; }
+  try {
+    const data = await api('/polls?room=' + encodeURIComponent(room));
+    if (state.current !== room) return;
+    showModal('群聊投票', '<button type="button" id="create-poll">发起投票</button><p class="hint">每位 Agent 独立投票，用户管理投票但不计票。应用退出期间暂停邀请，恢复后结算已过期投票。</p><div id="poll-list" data-room="' + escapeHtml(room) + '">' + pollListHtml(data.polls) + '</div>', null);
+    $('#create-poll').onclick = () => composePoll(room);
+  } catch (e) { toast(e.message); }
+}
+function composePoll(room) {
+  const requestId = crypto.randomUUID();
+  showModal('发起投票', `<label class="field">命题<input name="question" required maxlength="500" placeholder="希望伙伴们共同决定什么？"></label><label class="field">选项（每行一个，2–10 项）<textarea name="options" required rows="4" placeholder="方案 A&#10;方案 B"></textarea></label><label class="field">投票方式<select name="visibility"><option value="anonymous">匿名投票</option><option value="public">公开投票（记名）</option></select></label><p class="hint">匿名投票结束前隐藏票数，不展示谁投了哪项。此设置发布后不可更改。匿名不覆盖本机管理员或后端原生调用记录。</p><label class="field">持续时间（分钟）<input type="number" name="minutes" value="10" min="1" max="10080" required></label><p class="hint">全员选择或弃权后提前结束；结果不会自动执行。</p>`, async form => {
+    const data = new FormData(form);
+    await api('/polls/create', { room, poll: { question: data.get('question'), options: String(data.get('options')).split(/\r?\n/).map(s => s.trim()).filter(Boolean),
+      visibility: data.get('visibility'), duration_seconds: Number(data.get('minutes')) * 60, request_id: requestId } });
+    $('#modal').close(); toast('投票已创建，正在邀请群内 Agent');
+  }, '发布投票');
+}
+const pollsButton = document.createElement('button');
+pollsButton.type = 'button'; pollsButton.id = 'polls'; pollsButton.setAttribute('role', 'menuitem');
+pollsButton.innerHTML = '<span>☑</span><span>投票<small>匿名或公开，邀请全员参与</small></span>';
+$('#tools-menu').append(pollsButton);
+pollsButton.onclick = () => { closeTools(true); void showPolls(); };
+document.addEventListener('click', async event => {
+  const button = event.target.closest('[data-poll-action]');
+  if (!button) return;
+  const room = state.current;
+  button.disabled = true;
+  try {
+    await api('/polls/' + button.dataset.pollAction, { room, id: button.dataset.pollId });
+    toast({ retry: '已安排重试；忙碌成员将在空闲时收到邀请', close: '投票已结束', cancel: '投票已取消' }[button.dataset.pollAction]);
+  } catch (e) { toast(e.message); }
+  finally { button.disabled = false; }
+});
 
 function showHistory(roomId = '') {
   showModal('聊天记录', '<div class="history-controls"><label class="field">会话范围<select id="history-scope"><option value="">全部会话</option>' + state.conversations.map(c => '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(c.title) + (c.kind === 'group' ? ' · 群聊' : ' · 单聊') + '</option>').join('') + '</select></label><div class="history-query"><input id="history-query" type="search" maxlength="200" placeholder="搜索正文、发送者或附件名称" aria-label="搜索聊天记录"><button id="history-find" type="button">搜索</button></div></div><div class="history-export"><button type="button" data-export="md">导出 Markdown</button><button type="button" data-export="json">导出 JSON</button></div><p class="hint">导出所选会话的全部记录（不受搜索词限制），包含用户可见的私聊；附件仅记录名称，不包含原文件。请选择一个会话后导出。</p><p id="history-count" class="hint" role="status"></p><div id="history-results"></div><div class="history-pages"><button id="history-prev" type="button">上一页</button><button id="history-next" type="button">下一页</button></div>', null);

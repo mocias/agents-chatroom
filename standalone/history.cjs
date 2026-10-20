@@ -5,6 +5,7 @@ const readline = require('node:readline');
 
 function publicMessage(r) {
   return { id: String(r.id || ''), seq: r.seq, ts: String(r.ts || ''), kind: String(r.kind || 'agent'),
+    ...(r.pollId ? { pollId: String(r.pollId), pollPhase: String(r.pollPhase) } : {}),
     authorLabel: String(r.authorLabel || r.authorId || '未知'), text: String(r.text || ''),
     visibility: r.visibility === 'private' ? 'private' : 'public',
     recipients: Array.isArray(r.recipientLabels) ? r.recipientLabels.map(String) : [],

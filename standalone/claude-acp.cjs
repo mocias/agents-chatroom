@@ -5,6 +5,8 @@ const { spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 const readline = require('node:readline');
 const { desktopEnvironment, desktopModels } = require('./claude-desktop.cjs');
+const { mcpConfig } = require('../lib/poll-mcp.cjs');
+const { toolNames } = require('../lib/polls.cjs');
 
 function publicError(error, secrets = []) {
   let text = String(error?.message || error || 'Claude Code 请求失败');
@@ -16,17 +18,18 @@ function publicError(error, secrets = []) {
 }
 
 class ClaudeSession {
-  constructor(launch, cwd, send, onDeath = () => {}) {
+  constructor(launch, cwd, send, onDeath = () => {}, mcpServers = []) {
     this.launch = launch; this.cwd = cwd; this.send = send; this.onDeath = onDeath;
     this.id = crypto.randomUUID(); this.controls = new Map(); this.models = [];
     this.child = null; this.turn = null; this.closed = false; this.nextId = 0;
+    this.mcpServers = mcpServers;
   }
   async start() {
     const args = [...(this.launch.args || []), '--print', '--verbose',
       '--input-format', 'stream-json', '--output-format', 'stream-json', '--include-partial-messages',
       '--permission-prompt-tool', 'stdio', '--permission-mode', 'default', '--tools', '',
-      '--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: {} }),
-      '--system-prompt', 'You are a concise chat participant. Follow the supplied room identity and rules. Do not use tools.',
+      '--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: mcpConfig(this.mcpServers) }),
+      '--system-prompt', 'You are a concise chat participant. Follow the supplied room identity and rules. Only supplied agent_room poll tools are allowed. Never disclose anonymous ballots in chat.',
       '--settings', JSON.stringify({ disableAllHooks: true }), '--session-id=' + this.id];
     const env = this.launch.desktopDataDir ? desktopEnvironment(this.launch.desktopDataDir) : process.env;
     this.secrets = [env.ANTHROPIC_API_KEY, env.ANTHROPIC_AUTH_TOKEN, env.CLAUDE_CODE_OAUTH_TOKEN].filter(Boolean);
@@ -103,8 +106,9 @@ class ClaudeSession {
     }
     if (frame.type === 'control_request') {
       const request = frame.request || {};
+      const allowed = this.mcpServers.some(s => s.name === 'agent_room') && toolNames.some(name => request.tool_name === 'mcp__agent_room__' + name);
       this.write({ type: 'control_response', response: request.subtype === 'can_use_tool'
-        ? { subtype: 'success', request_id: frame.request_id, response: { behavior: 'deny', message: 'Agent Room CHAT 不授权工具操作' } }
+        ? { subtype: 'success', request_id: frame.request_id, response: allowed ? { behavior: 'allow', updatedInput: request.input } : { behavior: 'deny', message: 'Agent Room CHAT 仅授权投票工具' } }
         : { subtype: 'error', request_id: frame.request_id, error: 'Unsupported client request in Agent Room CHAT' } });
       return;
     }
@@ -174,7 +178,7 @@ function serve(launch, input = process.stdin, output = process.stdout) {
     if (method === 'initialize') return { protocolVersion: 1, agentInfo: { name: 'Claude Code (local stream-json)', version: '1' },
       agentCapabilities: { sessionCapabilities: { close: true } }, authMethods: [] };
     if (method === 'session/new') {
-      const session = new ClaudeSession(launch, params.cwd, send, () => { stop(); process.exitCode = 1; input.destroy(); });
+      const session = new ClaudeSession(launch, params.cwd, send, () => { stop(); process.exitCode = 1; input.destroy(); }, params.mcpServers || []);
       sessions.set(session.id, session);
       try { await session.start(); if (stopping) throw new Error('Claude Code 连接已关闭'); }
       catch (error) { session.close(); sessions.delete(session.id); throw error; }

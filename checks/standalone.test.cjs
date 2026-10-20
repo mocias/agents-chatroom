@@ -55,6 +55,36 @@ async function until(fn) {
   for (let i = 0; i < 100; i++) { const result = await fn(); if (result) return result; await new Promise((resolve) => setTimeout(resolve, 20)); }
   throw new Error('Timed out');
 }
+
+test('a slow member does not lock sending; follow-ups steer it and other members can answer', async t => {
+  let room, finish;
+  const captured = [], steered = [];
+  const env = await start(t, { roomFactory: settings => {
+    room = fakeFactory(captured)(settings);
+    const pool = room.pools.get('codex');
+    pool.supportsSteer = true;
+    pool.steer = async (id, text) => { steered.push({ id, text }); return { ok: true }; };
+    pool.runTurn = async () => new Promise(resolve => { finish = () => resolve({ text: '(无补充)' }); });
+    pool.interrupt = async () => { finish?.(); return true; };
+    return room;
+  } });
+  t.after(() => finish?.());
+  const a = (await env.call('/agents', { label: 'Slow', backend: 'codex' })).data.agent;
+  const b = (await env.call('/agents', { label: 'Fast', backend: 'dsh' })).data.agent;
+  const group = (await env.call('/groups', { agentIds: [a.id, b.id] })).data.conversation;
+  assert.equal((await env.call('/say', { room: group.id, text: '@Slow first' })).status, 202);
+  await until(() => finish);
+  assert.equal((await env.call('/say', { room: group.id, text: '@Fast second' })).status, 202);
+  await until(() => captured.some(c => c.id === b.id));
+  await until(async () => !(await env.call('/conversation?id=' + group.id)).data.pending);
+  assert.ok(room.snapshot().busy.includes(a.id));
+  assert.equal((await env.call('/say', { room: group.id, text: '@Slow follow-up' })).status, 202);
+  await until(() => steered.length);
+  assert.match(steered[0].text, /follow-up/);
+  assert.equal(room.log.filter(r => r.kind === 'user').length, 3);
+  assert.equal((await env.call('/stop', { room: group.id })).status, 200);
+  await until(() => !room.snapshot().busy.length);
+});
 test('both WorkBuddy editions can share a group with independent backend and workspace routing', async t => {
   const captured = [];
   const env = await start(t, { roomFactory: fakeFactory(captured), queryModels: async id => ({ selected: id + '-model', models: [{ id: id + '-model', name: id, efforts: [] }] }) });
@@ -66,7 +96,9 @@ test('both WorkBuddy editions can share a group with independent backend and wor
   assert.equal(cn.modelLocked, true); assert.equal(ai.modelLocked, true);
   const group = (await env.call('/groups', { agentIds: [cn.id, ai.id] })).data.conversation;
   assert.equal((await env.call('/say', { room: group.id, text: '@所有人 你好' })).status, 202);
-  await until(() => captured.length === 2);
+  // Peer replies may already have triggered another group turn by the next
+  // poll; wait for both backends, not an exact transient message count.
+  await until(() => ['workbuddy', 'workbuddy-ai'].every(backend => captured.some(c => c.backend === backend)));
   assert.deepEqual(new Set(captured.map(c => c.backend)), new Set(['workbuddy', 'workbuddy-ai']));
   assert.equal((await env.call('/backend-login', { id: 'codex' })).status, 400);
 });

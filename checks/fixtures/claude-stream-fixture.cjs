@@ -25,8 +25,10 @@ lines.on('line', line => {
     if (subtype === 'initialize') return answer(frame.request_id, { models: [
       { value: 'sonnet-test', displayName: 'Sonnet fixture' }, { value: 'opus-test', displayName: 'Opus fixture' },
       { value: 'rejected-test', displayName: 'Rejected fixture' },
+      { value: 'rate-limited-test', displayName: 'Rate limited fixture' },
     ] });
     if (subtype === 'set_model') {
+      if (frame.request.model === 'rate-limited-test') return answer(frame.request_id, null, 'API error: 429 Too many pending requests, please retry later · model not changed');
       if (frame.request.model === 'rejected-test') return answer(frame.request_id, null, 'model rejected');
       model = frame.request.model; return answer(frame.request_id, {});
     }

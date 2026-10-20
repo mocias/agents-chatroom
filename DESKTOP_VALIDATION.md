@@ -1,5 +1,22 @@
 # Windows 桌面版验收 · 2026-10-16
 
+## WorkBuddy refusal 复查 · 2026-10-20
+
+- 同一 WorkBuddy AI 安装、`deepseek-v4.1-flash`，单运行时/单会话/单 prompt 成功返回 `WORKBUDDY_LOCAL_OK`：`output/workbuddy-diagnosis-ji48xn/report.json`。
+- 与当前 Agent 配置对齐的模型和 `effort=enabled`，经过真实 HTTP、Room 引擎、WorkBuddy 后端成功返回 `WORKBUDDY_ROOM_OK`：`output/workbuddy-room-live-InTgbw/report.json`。均使用隔离数据目录。
+- 当前已安装 0.1.28 的原始服务代码也通过同样的完整流程：`output/workbuddy-room-live-XbxPC9/report.json`。因此本次恢复不依赖安装 0.1.29；未修改用户配置或正式代码来改变请求行为。
+- 昨日探测日志确认上游 HTTP 429 出现在生成前，WorkBuddy 内部等待 474 ms 后重试一次仍失败。可见日志没有可用于区分具体原因的业务码。未证明账号额度耗尽、本机并发超限或服务过载中的哪一种；当前未复现，不把暂时恢复表述为根因修复。
+- 初版完整流程夹具遗漏 effort，触发本地 `none` 不支持；补齐用户真实的 `enabled` 设置后通过。这一夹具失败不是用户 refusal 的根因。
+
+## 0.1.29 消息发送与后端错误 · 2026-10-19
+
+- 已复现旧版慢模型期间第二次 `/say` 返回 409；新增测试先失败，修复后通过。桌面提交只等待消息落入房间，不等待整个模型回复。其他调用方默认仍等待回复。
+- 全部 `checks/*.test.cjs` 105/105 通过。覆盖慢成员不阻塞其他成员、同成员补充、固定模型失败原因和会话清理、WorkBuddy 错误详情脱敏与部分输出后失败。
+- 真实浏览器 + HTTP + SSE + 房间引擎验证通过；仅推理使用可控慢回复替身。覆盖鼠标/Enter 发送、群聊、单聊、Codex steering、ACP 取消后接续、切换会话保留草稿、停止、无重复用户消息及无浏览器异常。证据：`output/concurrent-chat-ui-r7Kunw/report.json` 和 `send-while-thinking.png`。
+- 真实 WorkBuddy AI 当前固定模型 `deepseek-v4.1-flash` 探测失败，返回 `Quota exceeded: 429 too many requests`。这是上游额度/限流，未声称模型回复恢复。证据：`output/workbuddy-live-ogV5Ab/report.json`。
+- 真实 Claude 默认模型初始化通过，未发送聊天。截图中的 `claude-opus-5-5` 可从目录读取，但实际应用固定模型返回 `Model 'claude-opus-5-5' not found`，聊天未发出。目录选择已不再触发多余的 `set_model`；固定模型会话仍严格校验，不静默换模型。证据：`output/claude-live-fruUAy/report.json`、`output/claude-live-XtHAGI/report.json`。
+- 0.1.29 安装包与 0.1.28 → 0.1.29 增量包已生成。独立桌面启动通过，修复文件与源码逐字节一致：`output/packaged-chat-fix-NmbECp/report.json`。增量包以本机已安装 0.1.28 为基线，三个文件重建 SHA-256 校验通过；未执行用户安装目录的更新。
+
 ## 0.1.8 工作区、删除与原生归档边界
 
 - 最终回归 26/26 通过，包含删除确认、共用/祖先路径保护、模型与角色指令隔离。
@@ -107,3 +124,20 @@ Electron 44.7.2 / electron-builder 26.15.3，Windows x64 NSIS 安装向导。运
 2026-10-16 数据目录：32/32 回归通过，包含手动迁移后的附件路径。打包桌面检查 output/data-location-ui-1Q2MWm/report.json：配置待切换、未复制回退、完整复制后启动切换及原目录保留通过。测试使用隔离目录，未迁移用户实际数据。
 
 0.1.9：33/33 回归通过；最终优化打包核心桌面检查 output/desktop-smoke-CWhsSh/report.json 12 项通过。@所有人 双入口检查 output/composer-ui-uu7WUT/report.json。渲染合成基准及包体对照见 HANDOFF 0.1.9 节，不能解释为模型加速。
+
+## 2026-10-20：群聊公开与匿名投票（源码验收）
+
+- 最终 `npm test`：115/115 通过，0 跳过，记录 `output/polls-regression-final.log`。覆盖去重与改票、权限隔离、匿名读取和导出、持久化恢复、截止、成员退出、忙碌等待、重试上限和停止后的暂停。
+- Electron 实际以 Node 模式从隔离 `app.asar` 启动 MCP 桥接，握手及工具调用通过；这项检查没有构建或覆盖安装器。
+- 真实 MCP 闭环：Codex + DSH（`output/polls-live-impMex/report.json`）、DSH + Qoder（`output/polls-live-rVwBnd/report.json`）、DSH + WorkBuddy AI（`output/polls-live-r2Mpbg/report.json`），均完成创建、独立投票和全员自动结算。WorkBuddy 使用实际权限元数据中的工具名，只放行绑定的七个 Room 工具。
+- 浏览器真实操作验证：匿名进行中隐藏票数和归属、公开详情、创建、提前结束、取消、切群保留草稿和刷新恢复。截图 `output/playwright/polls-public-anonymous.png`、`output/playwright/polls-final.png`。
+- Claude 的桥接配置与工具权限通过自动化验证；本轮未验证其真实模型投票。WorkBuddy 国内版也未单独实测。匿名保证范围见 README。
+- 使用隔离测试数据和新后端会话；没有迁移用户聊天数据，没有发布或覆盖已安装的桌面程序。
+
+## 2026-10-20：0.1.30 构建交付
+
+- 发布版本回归 `output/release-0.1.30-elxHfk/tests.log`：115/115 通过。
+- 完整安装包 `dist/Agent-Room-Setup-0.1.30-x64.exe`；增量包 `dist/Agent-Room-Update-0.1.29-to-0.1.30-x64.zip`；校验清单 `dist/SHA256SUMS-0.1.30.txt`。
+- 最终打包程序启动、版本和源文件匹配：`output/packaged-chat-fix-oXjEVV/report.json`。登记生命周期隔离检查：`output/registration-lifecycle-roPGOW`，退出暂停、重开恢复、无脱离主程序的登记 worker。
+- ASAR 检查与实际增量应用：`output/release-0.1.30-elxHfk/artifact-audit.json`。47 个打包源文件与工作树一致；投票桥接在包内；私有数据和测试输出不在包内。升级副本的 3 个目标文件校验正确，测试数据与工作区保持完整。
+- 本轮没有执行 NSIS 安装/卸载，没有更新用户已安装程序。构建与隔离验收成功不代表用户已经升级。

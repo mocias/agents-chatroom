@@ -10,7 +10,8 @@ const { WorkbuddyPool } = require('../lib/workbuddy-pool.cjs');
 (async () => {
   const cwd = fs.mkdtempSync(path.resolve('output/workbuddy-live-'));
   const report = { cwd, modelRequestsSent: process.argv.includes('--chat'), editions: [] };
-  for (const arg of process.argv.slice(2).filter(a => a.includes('='))) {
+  const model = process.argv.find(arg => arg.startsWith('--model='))?.slice(8);
+  for (const arg of process.argv.slice(2).filter(a => a.includes('=') && !a.startsWith('--'))) {
     const eq = arg.indexOf('='), id = arg.slice(0, eq), exe = arg.slice(eq + 1);
     assert.ok(isWorkbuddy(id), 'unknown edition: ' + id);
     const launch = adapt(id, exe, 'live check').launch;
@@ -20,7 +21,8 @@ const { WorkbuddyPool } = require('../lib/workbuddy-pool.cjs');
     try {
       await pool.start(); row.initialize = true; row.protocolVersion = pool.info.protocolVersion;
       row.authMethods = pool.info.authMethods.map(m => ({ id: m.id, name: m.name }));
-      const one = await pool.openThread('one', { cwd, sandbox: 'read-only' });
+      const one = await pool.openThread('one', { cwd, sandbox: 'read-only', ...(model ? { model, strictModel: true } : {}) });
+      if (model) row.requestedModel = model;
       const two = await pool.openThread('two', { cwd, sandbox: 'read-only' });
       assert.notEqual(one.id, two.id); row.independentSessions = true;
       row.models = await pool.listModels();

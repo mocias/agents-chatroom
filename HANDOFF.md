@@ -1,6 +1,6 @@
 # Agents Chatroom — Handoff
 
-交接更新：2026-10-17。源码版本 0.1.19，仓库 agents-chatroom。此次 Claude Code 接入基于 GitHub main 与本地一致的 0.1.17（5e67747），保留后续身份分层、私聊、闹钟、群管理、数据迁移与界面优化。Claude 桌面 Gateway API 的单条真实回复已通过，详见文末 0.1.19 记录。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
+交接更新：2026-10-20。当前源码版本 0.1.30，发布目标为 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom），不是 `origin/master`。优先阅读文末 0.1.30 节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
 
 0.1.8 更新：默认工作区改为桌面安装目录/agents/backend/Agent名称；浏览器默认源码根/agents，支持 AGENT_ROOM_WORKSPACE_ROOT；旧路径不迁移。添加删除操作，默认保留文件，删除文件需完整路径确认，禁止共用/嵌套工作区、磁盘根、应用数据祖先、符号链接/联接。删除联系人移除单聊入口与群成员，保留群聊记录、底层日志和原后端记录。安装包构建不等于用户已安装版本更新。
 
@@ -434,3 +434,44 @@ WorkBuddy 原生 CLI 默认角色仅列四档。实验表明 web-ui header + mod
 新增 checks/history.test.cjs 与 scripts/check-history-ui.cjs。打包 UI 真实搜索/分页/高亮/安全转义与 Electron 下载完成内容验证：output/history-ui-7RgKDL。原工具栏和闹钟回归：output/composer-ui-x4HibN、output/packaged-alarms-LTfX8w。全量并发检查既有 WorkBuddy 群路由出现间歇超时；最终并发 83/83，移除临时诊断后串行 83/83（output/tests-0.1.23-serial.log），未宣称修复旧竞态。
 
 本地 D:/Agent Room 已从 0.1.22 增量升级至 0.1.23，全部更新文件哈希匹配并已启动；备份 .update-backup-0.1.22-798d23efe1e941c8bbbfdd824a2f911d。
+
+## 2026-10-20 0.1.30：群聊投票与累计源码交付
+
+本节是当前交接入口，优先于前文历史描述。源码版本 0.1.30，本轮同时收录此前本地 0.1.24–0.1.29 尚未上传的桌面工作区登记、登记队列生命周期和聊天并发修复；保留已有工作树成果。发布目标为 `agents-chatroom/main`，原 `origin/master` 不作为本轮目标。新建 AGENTS.md 供后续 agent 按当前约定接手。
+
+### 投票实现
+
+每位群成员可通过原生 MCP 发起命题和 2–10 个选项，支持公开记名与匿名、单选改票、弃权、截止、提前结束和取消；用户也可从“工具 → 投票”发起或管理，但用户不计票。参与者为创建时全员快照，包括发起 Agent；忙碌成员等待空闲，完成全员参与后自动结算，结果不自动执行任何方案。
+
+- `lib/polls.cjs`：原子持久化、参与者快照、授权视图、幂等创建和去重、结算、限次邀请、暂停和重试。
+- `lib/poll-mcp.cjs`、`lib/poll-mcp-stdio.cjs`：每位成员绑定的 loopback broker 与 stdio MCP；七个工具为 poll_create/list/get/vote/abstain/close/cancel，模型不能自报投票者身份。
+- `lib/room.cjs`、`standalone/server.cjs`：专用投票轮次、后台邀请、聊天记录及 SSE；匿名轮次的文本和工具参数不显示，普通消息继续排队，不被隐藏轮次吞掉。
+- Codex 通过 thread 配置逐工具批准，并调用 poll_list 预检；ACP 接收会话级 MCP。WorkBuddy 禁用工具延迟加载，通过 `_meta["codebuddy.ai/toolName"]` 精确批准；Claude 仅批准绑定的七个 MCP 工具。
+- 前端卡片与列表在 `standalone/public/`；历史导出仅保留公开授权视图。数据位于 Room 数据目录的 `polls.json`，随现有目录迁移流程处理。
+
+匿名是应用层匿名：其他 Agent、Room UI、SSE、聊天历史和导出不获得选票归属，匿名截止前不展示票数。为去重和改票，磁盘内部仍保存选票归属，后端原生会话可能保留工具调用；不能对本机管理员或 Agent 在普通聊天中的主动自曝承诺保密。旧 DSH 插件未接入这套投票工具。
+
+### 累计桌面登记和聊天修复
+
+当前支持按后端保存桌面登记队列、退出等待、备份与冲突检查；DSH 内置桥接、Codex 原生项目及退出后状态合并、Qoder/WorkBuddy 退出后索引登记、Claude 桌面原生 resume 入口，详见 README 的“桌面工作区登记”。登记目录不等于完整导入所有后端聊天历史。登记只在 Room 内运行，退出停止、重启恢复，不再保留脱离主程序的登记进程。
+
+并发/聊天相关改动保留 ACP 轮次边界和会话隔离、模型目录请求合并、启动关闭错误处理，以及已存在的 WorkBuddy/Claude 文本回复修复。真实验收结论以对应报告为准，不能用本轮投票测试替代所有历史场景。
+
+### 本轮验证
+
+- `output/release-0.1.30-elxHfk/tests.log`：115/115 通过，0 失败、0 跳过。
+- 投票真实闭环：Codex + DSH `output/polls-live-impMex/report.json`；DSH + Qoder `output/polls-live-rVwBnd/report.json`；DSH + WorkBuddy AI `output/polls-live-r2Mpbg/report.json`。均完成创建、独立投票和自动结算。Claude 投票与 WorkBuddy 国内版尚无本轮真实模型验收。
+- 浏览器投票交互与匿名/公开展示已验收，截图 `output/playwright/polls-final.png`。具体边界见 DESKTOP_VALIDATION.md。
+- 最终 0.1.30 打包程序启动：`output/packaged-chat-fix-oXjEVV/report.json`。
+- 最终打包程序退出/重启登记生命周期：`output/registration-lifecycle-roPGOW`，通过退出后暂停、保留队列、重开恢复和无独立遗留 worker；未调用真实模型。
+- `output/release-0.1.30-elxHfk/artifact-audit.json`：ASAR 内 47 个源文件与工作树一致，包含投票桥接，不含用户数据/测试输出；隔离副本实际应用 0.1.29→0.1.30 增量，3 个目标文件 SHA-256 全部匹配，数据与工作区标记保留。
+
+这些 output 路径是本机证据，不随 Git 源码上传。重现实测应使用隔离数据，不能依赖原机器账户或硬编码安装路径。建议技能见 AGENTS.md 的“建议技能”。
+
+### 构建产物与剩余边界
+
+- 完整安装包：`dist/Agent-Room-Setup-0.1.30-x64.exe`，102744370 字节。
+- 增量包：`dist/Agent-Room-Update-0.1.29-to-0.1.30-x64.zip`，338333 字节，仅适用于匹配的 0.1.29。
+- 校验：`dist/SHA256SUMS-0.1.30.txt`；完整包 SHA-256 `c9b09ef18d6bb4ea39b900ae80cd79e1baec5f3930fd4a3cc527c30b8f8b9caa`，增量包 `657fe20694ca2436ff8e7d726816dd8ceba5b348d2e7cd81dd5a614ea34065cd`。
+
+本轮生成安装包并验证打包程序和隔离增量升级，没有执行 NSIS 安装/卸载，也没有替换用户正在使用的安装或修改真实聊天数据。安装包未做发布者签名、没有自动更新。GitHub 上传范围为源码和文档；安装包保留本地，不创建新的 GitHub Release。

@@ -25,7 +25,10 @@ async function queryModels(id, launch, cwd, selected) {
     const models = choices(modelOption).map(m => ({ id: m.value, name: m.name || m.value, provider: m.provider || '', efforts: [], defaultEffort: null }));
     const wanted = selected || (pool.desktopCatalogStatus?.source === 'desktop-cache' && !models.some(m => m.id === modelOption?.currentValue) ? models[0]?.id : modelOption?.currentValue);
     if (!models.some(m => m.id === wanted)) throw new Error('后端没有返回可用的所选模型');
-    if (selected || wanted !== modelOption?.currentValue) {
+    // Claude exposes no model-dependent effort options. A catalogue read must
+    // not call set_model (the CLI may validate it with an upstream request).
+    // Access and the fixed model are still enforced when opening the real chat.
+    if (id !== 'claude' && (selected || wanted !== modelOption?.currentValue)) {
       const updated = await pool.request('session/set_config_option', { sessionId: session.sessionId, configId: modelOption.id, value: wanted });
       if (updated.configOptions) config = updated.configOptions;
     }

@@ -51,6 +51,23 @@ test('an empty ACP refusal surfaces as an error and does not consume initial ins
   await assert.rejects(pool.runTurn('a', { text: 'hello' }), /拒绝|refus/i);
   assert.notEqual(pool.getThread('a').instructionsSent, true);
 });
+
+test('ACP refusal surfaces provider details safely, including after a partial reply', async () => {
+  const pool = new AcpPool({ agentCommand: 'unused' });
+  pool.threads.set('a', { id: 'session-a', options: { developerInstructions: 'persona' } });
+  pool.request = async () => {
+    pool._dispatch({ method: 'session/update', params: { sessionId: 'session-a', update: {
+      sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'partial' },
+    } } });
+    return { stopReason: 'refusal', _meta: { 'codebuddy.ai/errorMessage': JSON.stringify({
+      code: 429, message: 'Too many pending requests token=PRIVATE_FIXTURE_VALUE',
+      data: { authorization: 'MUST_NOT_BE_RENDERED' },
+    }) } };
+  };
+  await assert.rejects(pool.runTurn('a', { text: 'hello' }), error =>
+    /429.*Too many pending requests/.test(error.message) && !/PRIVATE_FIXTURE_VALUE|MUST_NOT_BE_RENDERED/.test(error.message));
+  assert.notEqual(pool.getThread('a').instructionsSent, true);
+});
 async function desktopFixture(t, { endpoint: badEndpoint, createError } = {}) {
   const calls = [], frames = [], streams = new Set();
   const passwords = new Set(), connections = new Map(); let sessions = 0;
@@ -191,6 +208,7 @@ test('a new WorkBuddy room starts without a legacy backend folder and preserves 
   const results = await Promise.all(room.members.map(member => actualPool.runTurn(member.id, { text: 'hello' })));
   assert.deepEqual(results.map(r => r.text), ['你好 session-1', '你好 session-2']);
   assert.equal(calls.filter(c => c.method === 'session.create').length, 2);
+  assert.deepEqual(calls.filter(c => c.method === 'session.create').map(c => c.params.cwd), members.map(m => m.workspace));
   assert.equal(fs.statSync(calls[0].params.cwd).isDirectory(), true);
   assert.deepEqual(frames.filter(f => f.method === 'session/new').map(f => f.params.cwd), members.map(m => m.workspace));
 });

@@ -55,3 +55,17 @@ dialog.history-dialog #modal-error:empty{display:none}
 .history-controls .field{margin-top:0}.history-query{display:flex;gap:8px}.history-query input{min-width:0;flex:1;padding:10px;border:1px solid var(--ar-line);border-radius:8px;background:var(--ar-bg);color:var(--ar-text);font-size:13px}
 .history-export,.history-pages{display:flex;gap:8px;margin:14px 0}.history-export button,.history-pages button,.history-query button{font-size:12px}.history-pages{justify-content:flex-end}
 #history-results{max-height:42dvh;overflow:auto;overscroll-behavior:contain}.history-result{border:1px solid var(--ar-line);border-radius:10px;padding:14px;margin-bottom:10px;background:var(--ar-bg)}.history-result.private-history{border-color:color-mix(in srgb,#9b72cf 55%,var(--ar-line))}.history-meta{display:flex;justify-content:space-between;gap:10px;font-size:12px}.history-meta time{color:var(--ar-dim);font-size:11px}.history-result pre{font:inherit;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;line-height:1.8}.history-result mark{background:#f8db78;color:#292518;border-radius:2px}
+.poll-card{max-width:620px;margin:16px 0;padding:20px;border:1px solid var(--ar-border,#d9dedb);border-radius:16px;background:var(--ar-panel,#fff);color:var(--ar-text,#25312d);box-shadow:0 3px 12px #00000006}
+.poll-card header,.poll-card footer,.poll-options li{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.poll-card header{font-size:12px;color:var(--ar-muted,#68756e)}
+.poll-card h3{font-size:17px;line-height:1.5;margin:16px 0 8px;overflow-wrap:anywhere}
+.poll-badge{padding:4px 9px;border-radius:20px;background:#e3efe9;color:#245741}
+.poll-options{list-style:none;padding:0;margin:16px 0}
+.poll-options li{padding:10px 12px;margin:6px 0;background:#82958b0d;border-radius:8px;overflow-wrap:anywhere}
+.poll-options strong{white-space:nowrap;font-size:13px}
+.poll-card footer{justify-content:flex-start;flex-wrap:wrap;margin-top:14px}
+.poll-card footer button{padding:7px 11px}
+.poll-card details{font-size:13px;line-height:1.8}
+.poll-card .hint{line-height:1.7}
+.poll-result{font-weight:600;color:#245741}
+#poll-list .poll-card{max-width:none}
