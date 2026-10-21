@@ -141,3 +141,22 @@ Electron 44.7.2 / electron-builder 26.15.3，Windows x64 NSIS 安装向导。运
 - 最终打包程序启动、版本和源文件匹配：`output/packaged-chat-fix-oXjEVV/report.json`。登记生命周期隔离检查：`output/registration-lifecycle-roPGOW`，退出暂停、重开恢复、无脱离主程序的登记 worker。
 - ASAR 检查与实际增量应用：`output/release-0.1.30-elxHfk/artifact-audit.json`。47 个打包源文件与工作树一致；投票桥接在包内；私有数据和测试输出不在包内。升级副本的 3 个目标文件校验正确，测试数据与工作区保持完整。
 - 本轮没有执行 NSIS 安装/卸载，没有更新用户已安装程序。构建与隔离验收成功不代表用户已经升级。
+
+## 界面美化源码验收 · 2026-10-22
+
+- 桌面/浏览器共用的 `standalone/public/` 已更新列表、欢迎页、聊天、输入卡片、弹窗、主题预览和投票样式；旧 DSH 插件界面未改动。
+- 基础回归 115/115：`output/ui-polish-tests-live.log`。
+- 真实 Chrome + 隔离 HTTP/SSE：`output/playwright/appearance-6O2lLX/report.json`。五主题及自定义 RGB/HSL/短 hex 重载，私聊标记与匿名投票，历史与空会话，工具菜单/提及/草稿，1440/1000/720/390px 布局通过。浏览器异常和模型调用均为零。截图同目录。
+- 源码 Electron 原有输入栏回归：`output/composer-ui-XWiUOp/report.json`，覆盖菜单、闹钟、提及、草稿、重命名和长列表/长历史独立滚动。
+- 初次在受限环境运行的浏览器与基础回归遇到本机访问限制；放行隔离测试后通过。源码 Electron 启动同样在放行后通过。
+- 此轮未重新打包或安装，没有真实模型验收；用户已安装程序与现有 dist 安装包尚不包含此次界面更新。
+
+## 0.1.31 最终交付与真实安装更新 · 2026-10-22
+
+- 基础回归：`output/tests-0.1.31.log`，115/115。
+- 多 harness 界面与响应式验收：`output/playwright/appearance-JZPIhv/report.json`；README 演示图来自该目录，无真实模型调用或个人聊天。
+- 最终安装包启动 `output/packaged-chat-fix-ybdC4W/report.json`；输入栏/滚动/重命名 `output/composer-ui-dKO84H/report.json`；退出重启登记 `output/registration-lifecycle-oDBFH9/report.json`。
+- ASAR 审计 `output/release-0.1.31/artifact-audit.json`：48 文件匹配源码，不含用户数据/工作区/测试输出。隔离实际增量升级 `isolated-update.json`：3 文件 SHA-256 与数据保留通过。
+- 已将真实 `D:/Agent Room` 从 0.1.28 更新至 0.1.31，并重新启动。`installed-update.json` 证明替换后首次启动前全部保护文件与目录不变，首次启动后已有聊天日志与工作区仍匹配；`installed-startup.json` 证明正式数据路径及 4 位 Agent、5 个会话可读，没有发送聊天。
+- 程序备份 `D:/Agent Room/.update-backup-0.1.28-a1d9a15d7f824b8aa24f68d55b070974`；完整数据/工作区备份 `output/release-0.1.31/user-backup/`。没有卸载、安装器流程或真实模型验收。
+- 完整安装包、0.1.28→0.1.31 增量与 SHA-256 位于 dist；仅源码、文档和演示图进入 GitHub，不创建 Release。

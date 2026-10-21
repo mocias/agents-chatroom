@@ -1,6 +1,6 @@
 # Agents Chatroom — Handoff
 
-交接更新：2026-10-20。当前源码版本 0.1.30，发布目标为 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom），不是 `origin/master`。优先阅读文末 0.1.30 节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
+交接更新：2026-10-22。当前源码版本 0.1.31，已打包并将本机 `D:/Agent Room` 从 0.1.28 增量升级至 0.1.31。发布目标为 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom），不是 `origin/master`。优先阅读文末最新节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
 
 0.1.8 更新：默认工作区改为桌面安装目录/agents/backend/Agent名称；浏览器默认源码根/agents，支持 AGENT_ROOM_WORKSPACE_ROOT；旧路径不迁移。添加删除操作，默认保留文件，删除文件需完整路径确认，禁止共用/嵌套工作区、磁盘根、应用数据祖先、符号链接/联接。删除联系人移除单聊入口与群成员，保留群聊记录、底层日志和原后端记录。安装包构建不等于用户已安装版本更新。
 
@@ -475,3 +475,33 @@ WorkBuddy 原生 CLI 默认角色仅列四档。实验表明 web-ui header + mod
 - 校验：`dist/SHA256SUMS-0.1.30.txt`；完整包 SHA-256 `c9b09ef18d6bb4ea39b900ae80cd79e1baec5f3930fd4a3cc527c30b8f8b9caa`，增量包 `657fe20694ca2436ff8e7d726816dd8ceba5b348d2e7cd81dd5a614ea34065cd`。
 
 本轮生成安装包并验证打包程序和隔离增量升级，没有执行 NSIS 安装/卸载，也没有替换用户正在使用的安装或修改真实聊天数据。安装包未做发布者签名、没有自动更新。GitHub 上传范围为源码和文档；安装包保留本地，不创建新的 GitHub Release。
+
+## 2026-10-22：独立界面美化（源码，未重新打包）
+
+在现有绿色基调上整理独立桌面/浏览器共用界面：会话列表与分段筛选、欢迎页与功能提示、聊天留白和气泡、输入卡片、设置与历史弹窗、投票卡片。搜索、历史入口和投票工具使用统一线框图标；外观设置提供五种主题缩略预览与选中状态。深浅色根据浏览器解析后的实际背景色确定，兼容自定义 hex/RGB/HSL；用户气泡、头像、投票、原生表单和焦点均跟随主题。窄窗口工具菜单相对输入卡片定位，避免超出可见区域；保留减少动态效果偏好。
+
+验证使用隔离数据，没有模型请求、真实安装扫描、正式聊天数据修改或发布：
+
+- `output/ui-polish-tests-live.log`：115/115 基础回归通过。受限环境初跑无法访问部分临时文件/本机接口；放行本机测试后完整通过。
+- `output/playwright/appearance-6O2lLX/report.json`：真实 Chrome + HTTP/SSE；五种主题、RGB/HSL/短 hex 保存后重载、私聊标记、匿名投票截止前隐藏、历史搜索、空会话、草稿保留、提及与菜单键盘操作；1440/1000/720/390px 无页面横向溢出，输入/发送可见，菜单位于窗口内。含欢迎页、聊天、主题预览、投票及窄窗口截图，浏览器异常与模型调用均为零。
+- `output/composer-ui-XWiUOp/report.json`：源码 Electron（`UI_DEV=1`）通过原有图标尺寸、悬浮、菜单键盘/外部关闭、闹钟、提及、草稿保留、30 联系人/长历史独立滚动、联系人/群聊重命名验收。
+
+新增 `scripts/check-ui-appearance.cjs` 可重现视觉验收。此轮没有改版本号、重建安装包、替换用户安装、提交或推送；现有 dist/0.1.30 产物不包含本次样式。
+
+## 2026-10-22 0.1.31：多 harness 外观交付与本地升级
+
+用户已授权打包、本地更新与 GitHub 源码上传。本节覆盖此前“源码未打包”状态。Agent 列表、普通/私聊/流式消息署名新增 harness 标识；群聊副标题列出成员 harness，搜索同时匹配 harness 名称。README 插入 `docs/images/agent-room-multi-harness.png`，截图展示 Codex、DSH、Qoder、Claude Code、WorkBuddy AI 与 WorkBuddy，并明确所有消息来自隔离演示数据，不是真实模型验收。
+
+最终验证：
+
+- `output/tests-0.1.31.log`：115/115 基础回归通过。
+- `output/playwright/appearance-JZPIhv/report.json`：五主题、自定义色恢复、六种 harness 标识、匿名投票、历史/空会话、菜单/提及和四种窗口尺寸通过，无浏览器异常、无模型请求。README 图片来自该目录 `chat-light.png`。
+- `output/packaged-chat-fix-ybdC4W/report.json`：最终打包程序版本 0.1.31、隔离启动通过。
+- `output/composer-ui-dKO84H/report.json`：最终打包输入栏、菜单、提及、重命名和独立滚动通过。
+- `output/registration-lifecycle-oDBFH9/report.json`：最终打包退出暂停、队列保留、重开恢复且无脱离主程序 worker。
+- `output/release-0.1.31/artifact-audit.json`：ASAR 中 48 个文件逐个核对当前源码（package.json 核对版本与打包入口），无用户数据、工作区和测试输出。
+- `output/release-0.1.31/isolated-update.json`：基于本机准确 0.1.28 文件生成增量，在隔离副本实际重建 3 个程序文件并校验 SHA-256；聊天/工作区标记保留。
+
+本地真实更新已完成：`D:/Agent Room` 的 `Agent Room.exe`、`resources/app.asar`、`Uninstall Agent Room.exe` 更新到 0.1.31，已重新启动。程序备份 `D:/Agent Room/.update-backup-0.1.28-a1d9a15d7f824b8aa24f68d55b070974`；数据与四个工作区完整备份位于 `output/release-0.1.31/user-backup/`，不入 Git。正式数据路径保持 `D:/agent room data`，4 位 Agent / 5 个会话仍可从安装版读取。替换后、首次启动前，全部 33 个数据文件及四个工作区目录与原校验清单一致；首次启动后已有聊天日志与工作区继续通过哈希校验。证据：`installed-update.json`、`installed-startup.json`。未发送聊天、未运行真实模型验收，未执行卸载。
+
+本地产物：`dist/Agent-Room-Setup-0.1.31-x64.exe`、`dist/Agent-Room-Update-0.1.28-to-0.1.31-x64.zip`、`dist/SHA256SUMS-0.1.31.txt`。增量仅适用于文件匹配的 0.1.28。GitHub 本轮仅上传源码、文档与 README 演示图；不上传安装包或创建 Release。

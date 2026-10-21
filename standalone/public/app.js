@@ -12,11 +12,17 @@ async function api(route, body, method = 'POST') {
 }
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 5000); }
 function avatar(agent, group = false) { return `<span class="avatar ${group ? 'group' : escapeHtml(agent?.backend || '')}">${group ? '☷' : escapeHtml((agent?.label || 'A').slice(0, 1).toUpperCase())}</span>`; }
+function harnessLabel(backend) {
+  return ({ codex: 'Codex', dsh: 'DSH', qoder: 'Qoder', claude: 'Claude Code', workbuddy: 'WorkBuddy', 'workbuddy-ai': 'WorkBuddy AI' })[backend] || backend || '';
+}
+function harnessBadge(agent) {
+  return agent?.backend ? `<span class="harness-badge ${escapeHtml(agent.backend)}">${escapeHtml(harnessLabel(agent.backend))}</span>` : '';
+}
 function time(ts) { return ts ? new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''; }
 function renderList() {
   const query = $('#search').value.trim().toLowerCase();
-  const rows = state.conversations.filter((row) => (state.filter === 'all' || row.kind === state.filter) && (row.title.toLowerCase().includes(query) || row.agentIds.some((id) => state.agents.find((a) => a.id === id)?.label.toLowerCase().includes(query)))).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt.localeCompare(a.updatedAt));
-  $('#conversations').innerHTML = rows.length ? rows.map((row) => `<button class="conversation ${row.id === state.current ? 'active' : ''}" data-room="${row.id}" aria-current="${row.id === state.current}">${avatar(state.agents.find((a) => a.id === row.agentIds[0]), row.kind === 'group')}<div class="conversation-info"><div class="conversation-top"><strong>${row.pinned ? '<span class="pin-mark" aria-label="已置顶">⌃ </span>' : ''}${escapeHtml(row.title)}</strong><time>${time(row.updatedAt)}</time>${state.unread.has(row.id) ? '<i class="unread"></i>' : ''}</div><p>${escapeHtml(row.preview || '开始聊天吧')}</p></div></button>`).join('') : '<p class="empty-list">' + (query ? '没有找到匹配的会话' : state.filter === 'group' ? '还没有群聊<br>选择几位伙伴，一起聊聊' : '点击搜索框旁的 ＋<br>添加你的第一位 AI 伙伴') + '</p>';
+  const rows = state.conversations.filter((row) => (state.filter === 'all' || row.kind === state.filter) && (row.title.toLowerCase().includes(query) || row.agentIds.some((id) => { const agent = state.agents.find(a => a.id === id); return agent && (agent.label + ' ' + harnessLabel(agent.backend)).toLowerCase().includes(query); }))).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt.localeCompare(a.updatedAt));
+  $('#conversations').innerHTML = rows.length ? rows.map((row) => `<button class="conversation ${row.id === state.current ? 'active' : ''}" data-room="${row.id}" aria-current="${row.id === state.current}">${avatar(state.agents.find((a) => a.id === row.agentIds[0]), row.kind === 'group')}<div class="conversation-info"><div class="conversation-top"><strong>${row.pinned ? '<span class="pin-mark" aria-label="已置顶">⌃ </span>' : ''}${escapeHtml(row.title)}</strong><time>${time(row.updatedAt)}</time>${state.unread.has(row.id) ? '<i class="unread"></i>' : ''}</div><p class="conversation-preview">${row.kind === 'direct' ? harnessBadge(state.agents.find(a => a.id === row.agentIds[0])) : ''}<span>${escapeHtml(row.preview || '开始聊天吧')}</span></p></div></button>`).join('') : '<p class="empty-list">' + (query ? '没有找到匹配的会话' : state.filter === 'group' ? '还没有群聊<br>选择几位伙伴，一起聊聊' : '点击搜索框旁的 ＋<br>添加你的第一位 AI 伙伴') + '</p>';
   $('#welcome-add').textContent = state.agents.length ? '＋ 添加 Agent' : '＋ 添加第一个 Agent';
 }
 function attachmentsHtml(items, removable = false) {
@@ -70,7 +76,7 @@ function messageHtml(record) {
     const privateMessage = record.visibility === 'private';
     const recipients = (record.recipientIds || []).map((id, i) => id === 'user' ? '用户' : (state.agents.find(a => a.id === id)?.label || record.recipientLabels?.[i] || id)).join('、');
     const scope = privateMessage ? `<span class="private-label">私聊 · ${escapeHtml(record.authorLabel)} → ${escapeHtml(recipients)} · 用户可见</span>` : '';
-    return `<article class="message ${isUser ? 'user' : ''} ${privateMessage ? 'private-message' : ''}">${isUser ? '<span class="avatar">我</span>' : avatar(agent)}<div class="message-main"><div class="message-meta"><span>${escapeHtml(record.authorLabel)}</span><time>${time(record.ts)}</time></div>${scope}<div class="bubble">${escapeHtml(record.text)}${files}</div></div></article>`;
+    return `<article class="message ${isUser ? 'user' : ''} ${privateMessage ? 'private-message' : ''}">${isUser ? '<span class="avatar">我</span>' : avatar(agent)}<div class="message-main"><div class="message-meta"><span>${escapeHtml(record.authorLabel)}</span>${isUser ? '' : harnessBadge(agent)}<time>${time(record.ts)}</time></div>${scope}<div class="bubble">${escapeHtml(record.text)}${files}</div></div></article>`;
 }
 // Coalesce streaming updates once per frame without rebuilding history DOM.
 let messageFrame = null;
@@ -102,7 +108,7 @@ function updateLiveMessages(panel) {
     if (!node) {
       const agent = state.agents.find(a => a.id === live.memberId);
       node = document.createElement('article'); node.className = 'message live'; node.dataset.live = id;
-      node.innerHTML = avatar(agent) + '<div class="message-main"><div class="message-meta">' + escapeHtml(agent?.label || 'Agent') + ' · 生成预览，仅用户可见，完成后投递</div><div class="bubble"></div></div>';
+      node.innerHTML = avatar(agent) + '<div class="message-main"><div class="message-meta"><span>' + escapeHtml(agent?.label || 'Agent') + '</span>' + harnessBadge(agent) + '<span>生成预览，仅用户可见，完成后投递</span></div><div class="bubble"></div></div>';
       panel.append(node);
     }
     const bubble = node.querySelector('.bubble'); const text = live.text;
@@ -132,7 +138,8 @@ async function openConversation(id) {
   const row = state.conversations.find((c) => c.id === id);
   $('#chat-title').textContent = row.title;
   $('#group-actions').hidden = row.kind !== 'group';
-  $('#chat-subtitle').textContent = row.kind === 'group' ? `${row.agentIds.length} 位 Agent · @ 提及伙伴，让对话接着走` : `${state.agents.find((a) => a.id === row.agentIds[0])?.backend || ''} · 独立对话`;
+  const harnesses = [...new Set(row.agentIds.map(id => harnessLabel(state.agents.find(a => a.id === id)?.backend)).filter(Boolean))];
+  $('#chat-subtitle').textContent = row.kind === 'group' ? `${row.agentIds.length} 位 Agent · ${harnesses.join(' / ')}` : `${harnesses[0] || 'Agent'} · 独立对话`;
   $('#draft').value = state.drafts[id] || '';
   $('#messages').innerHTML = '<div class="empty-chat">正在读取聊天记录…</div>';
   renderList(); renderAttachments(); updateActivity();
@@ -372,12 +379,18 @@ let themeData;
 function applyTheme(theme) {
   themeData = theme;
   for (const [name, value] of Object.entries(theme.colors || {})) document.documentElement.style.setProperty(name, value);
+  // Follow custom background colours as well as named presets.
+  // The browser resolves every supported hex/rgb/hsl notation to sRGB here.
+  const rgb = getComputedStyle(document.documentElement).backgroundColor.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+  const dark = rgb?.length === 3 && rgb.every(Number.isFinite) && (rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722) < 140;
+  document.documentElement.dataset.appearance = dark ? 'dark' : 'light';
+  document.querySelectorAll('[data-preset]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.preset === theme.preset)));
   document.documentElement.style.setProperty('--wallpaper', theme.background?.kind === 'file' ? `url("/api/background?v=${theme.background.version}")` : 'none');
 }
 async function settings() {
   try {
     const result = await api('/theme'); applyTheme(result.theme);
-    showModal('让房间更像你', `<p class="hint">外观设置会应用到所有会话，并保存在本机。</p><div class="themes">${result.presets.map((p) => `<button type="button" data-preset="${p.id}"><span class="theme-swatch" style="background:${p.colors['--ar-bg']}"></span>${escapeHtml(p.label)}</button>`).join('')}</div><label class="colors">聊天背景色<input type="color" id="bg-color" value="${themeData.colors['--ar-bg']}"></label><label class="colors">正文颜色<input type="color" id="text-color" value="${themeData.colors['--ar-text']}"></label><label class="upload-background">聊天背景图片<input type="file" id="background-input" accept="image/png,image/jpeg,image/webp"></label><button type="button" id="remove-background">移除背景图片</button>`, null);
+    showModal('让房间更像你', `<p class="hint">选择一种氛围，让每段对话都有熟悉的感觉。<br>外观应用到所有会话，并保存在本机。</p><div class="themes">${result.presets.map((p) => `<button type="button" data-preset="${p.id}" aria-pressed="${p.id === themeData.preset}"><span class="theme-preview" style="--preview-bg:${p.colors['--ar-bg']};--preview-panel:${p.colors['--ar-panel']};--preview-line:${p.colors['--ar-line']};--preview-text:${p.colors['--ar-text']}"><i></i><i></i><i></i></span><span class="theme-name"><span class="theme-swatch" style="background:${p.colors['--ar-bg']}"></span>${escapeHtml(p.label)}</span></button>`).join('')}</div><label class="colors">聊天背景色<input type="color" id="bg-color" value="${themeData.colors['--ar-bg']}"></label><label class="colors">正文颜色<input type="color" id="text-color" value="${themeData.colors['--ar-text']}"></label><label class="upload-background">聊天背景图片<input type="file" id="background-input" accept="image/png,image/jpeg,image/webp"></label><button type="button" id="remove-background">移除背景图片</button>`, null);
     $('#modal-content').onclick = async (event) => { const preset = event.target.closest('[data-preset]'); if (!preset) return; try { applyTheme((await api('/theme', { preset: preset.dataset.preset })).theme); $('#bg-color').value = themeData.colors['--ar-bg']; $('#text-color').value = themeData.colors['--ar-text']; } catch (error) { toast(error.message); } };
     for (const [id, token] of [['bg-color', '--ar-bg'], ['text-color', '--ar-text']]) $('#' + id).onchange = async (event) => { try { applyTheme((await api('/theme', { colors: { [token]: event.target.value } })).theme); } catch (error) { toast(error.message); } };
     $('#background-input').onchange = async (event) => { try { const file = event.target.files[0]; if (!file) return; if (file.size > 16 * 1024 * 1024) throw new Error('背景图片不能超过 16 MB'); const response = await fetch('/api/theme/background?type=' + encodeURIComponent(file.type), { method: 'POST', body: file }); const data = await response.json(); if (!response.ok) throw new Error(data.error); applyTheme(data.theme); } catch (error) { toast(error.message); } };
@@ -589,7 +602,7 @@ function composePoll(room) {
 }
 const pollsButton = document.createElement('button');
 pollsButton.type = 'button'; pollsButton.id = 'polls'; pollsButton.setAttribute('role', 'menuitem');
-pollsButton.innerHTML = '<span>☑</span><span>投票<small>匿名或公开，邀请全员参与</small></span>';
+pollsButton.innerHTML = '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="m8 9 2 2 5-5M8 16h8"/></svg><span>投票<small>匿名或公开，邀请全员参与</small></span>';
 $('#tools-menu').append(pollsButton);
 pollsButton.onclick = () => { closeTools(true); void showPolls(); };
 document.addEventListener('click', async event => {

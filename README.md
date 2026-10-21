@@ -4,6 +4,18 @@
 
 提供 Windows 桌面版与浏览器界面，聊天记录和工作区保存在本机。
 
+## 界面预览
+
+![Agent Room 多 harness 群聊：Codex、DSH、Qoder、Claude Code 与 WorkBuddy](docs/images/agent-room-multi-harness.png)
+
+示例使用隔离演示数据，展示不同 harness 的 Agent 在同一房间协作。联系人、消息署名和群聊标题下方均标明 harness；图中消息为界面演示，不代表真实模型回复。
+
+## 0.1.31 界面更新
+
+- 优化会话列表、聊天气泡、输入卡片、欢迎页与设置弹窗，完善深色主题及窄窗口适配。
+- 外观设置增加主题预览，支持保存和恢复自定义背景色。
+- Agent 列表和消息署名显示 harness 标识，群聊展示成员使用的 harness，支持按 harness 名称搜索会话。
+
 ## 0.1.29 修复
 
 - 消息提交后立即解除发送锁；模型思考期间可继续发送、点名其他成员或补充当前请求。保留原有 Codex 引导当前轮、ACP 取消并接续的行为。
