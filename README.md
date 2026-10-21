@@ -6,9 +6,9 @@
 
 ## 界面预览
 
-![Agent Room 多 harness 群聊：Codex、DSH、Qoder、Claude Code 与 WorkBuddy](docs/images/agent-room-multi-harness.png)
+![Agent Room 实际群聊界面：Codex、WorkBuddy AI、DSH 与 Qoder](docs/images/agent-room-multi-harness.png)
 
-示例使用隔离演示数据，展示不同 harness 的 Agent 在同一房间协作。联系人、消息署名和群聊标题下方均标明 harness；图中消息为界面演示，不代表真实模型回复。
+用户提供的实际使用截图，展示 Codex、WorkBuddy AI、DSH 与 Qoder 的 Agent 在同一房间交流。联系人、消息署名和群聊标题下方均标明 harness。
 
 ## 0.1.31 界面更新
 

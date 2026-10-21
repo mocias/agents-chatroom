@@ -505,3 +505,7 @@ WorkBuddy 原生 CLI 默认角色仅列四档。实验表明 web-ui header + mod
 本地真实更新已完成：`D:/Agent Room` 的 `Agent Room.exe`、`resources/app.asar`、`Uninstall Agent Room.exe` 更新到 0.1.31，已重新启动。程序备份 `D:/Agent Room/.update-backup-0.1.28-a1d9a15d7f824b8aa24f68d55b070974`；数据与四个工作区完整备份位于 `output/release-0.1.31/user-backup/`，不入 Git。正式数据路径保持 `D:/agent room data`，4 位 Agent / 5 个会话仍可从安装版读取。替换后、首次启动前，全部 33 个数据文件及四个工作区目录与原校验清单一致；首次启动后已有聊天日志与工作区继续通过哈希校验。证据：`installed-update.json`、`installed-startup.json`。未发送聊天、未运行真实模型验收，未执行卸载。
 
 本地产物：`dist/Agent-Room-Setup-0.1.31-x64.exe`、`dist/Agent-Room-Update-0.1.28-to-0.1.31-x64.zip`、`dist/SHA256SUMS-0.1.31.txt`。增量仅适用于文件匹配的 0.1.28。GitHub 本轮仅上传源码、文档与 README 演示图；不上传安装包或创建 Release。
+
+### 2026-10-22 README 示例图替换
+
+按用户明确要求，将 README 示例图替换为用户上传的实际使用截图，原样保存在 `docs/images/agent-room-multi-harness.png`，复制后 SHA-256 与上传文件一致。图片说明同步改为实际使用截图，展示 Codex、WorkBuddy AI、DSH、Qoder；不再称其为隔离演示数据。此轮仅更新文档和图片，不涉及程序、版本或本地数据。

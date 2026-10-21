@@ -26,7 +26,7 @@
 
 - 基础回归 `npm test`；按改动运行相关真实 UI 或后端检查。真实模型检查使用隔离数据，会消耗用户额度；不得把 fixture 测试当成真实回复验证。
 - 外观改动运行 `node scripts/check-ui-appearance.cjs`：使用本机 Chrome 与隔离 HTTP/SSE 服务，不调用模型或扫描安装；截图及报告写入 `output/playwright/appearance-*/`。同时保留现有输入栏、键盘和滚动回归。深浅色应跟随保存的背景色，新增颜色使用主题变量，不写死浅色控件。
-- README 界面示例使用隔离演示数据，保留 harness 名称可见，并注明演示消息不是真实模型回复。示例图片位于 `docs/images/`；不得上传真实聊天截图或把整个 `output/` 纳入提交。
+- README 界面示例默认使用隔离演示数据，保留 harness 名称可见，并注明演示消息不是真实模型回复；用户明确指定上传的截图可按其要求使用，并据实更新图片说明。示例图片位于 `docs/images/`；未经用户授权不得上传真实聊天截图，不得把整个 `output/` 纳入提交。
 - 投票回归 `node --test checks/polls.test.cjs`；显式真实检查 `node scripts/check-live-polls.cjs codex,dsh`，其他可用组合见 DESKTOP_VALIDATION.md。
 - 构建前同步 `package.json` 与 `package-lock.json` 版本。运行 `npm run desktop:dist`，再验收最终 `dist/win-unpacked` 的程序和 ASAR 内容，检查源码匹配与污染文件。
 - 完整安装包、增量包和 SHA-256 放在 `dist/`，不得提交进 Git。增量包必须基于准确旧版本文件，并在隔离副本上验证文件校验和数据保留。
