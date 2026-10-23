@@ -85,7 +85,7 @@ test('Claude cancellation completes the active prompt and the session accepts th
 test('Claude joins the current room engine with independent direct and group instructions', async t => {
   const { cwd, launch } = setup(t);
   for (const kind of ['direct', 'group']) {
-    const room = new AgentRoom({ id: 'claude-' + kind, kind, cwd, prewarm: false, conversationKind: kind,
+    const room = new AgentRoom({ id: 'claude-' + kind, kind, backend: 'claude', cwd, prewarm: false, conversationKind: kind,
       members: [{ id: 'a', backend: 'claude', label: 'Claude teammate', workspace: cwd, model: 'sonnet-test', modelLocked: true, effort: null, persona: 'PERSONA_FIXTURE' }],
       backends: { claude: launch }, replyPolicy: kind === 'direct' ? 'everyone' : 'addressed',
     });

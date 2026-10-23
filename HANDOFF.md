@@ -1,6 +1,6 @@
 # Agents Chatroom — Handoff
 
-交接更新：2026-10-23。当前源码版本 0.1.31；本轮新增路线图、社区贡献入口和相似项目调研，不修改运行行为。此前已打包并将本机 `D:/Agent Room` 从 0.1.28 增量升级至 0.1.31。发布目标为 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom），不是 `origin/master`。优先阅读文末最新节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
+交接更新：2026-10-23。当前源码版本 0.1.32；本轮实现 Agent 级共享记忆、严格工作区校验及记忆查看，已生成并验证安装包和 0.1.31→0.1.32 增量包，未替换真实安装。此前已将本机 `D:/Agent Room` 从 0.1.28 升级至 0.1.31。发布目标为 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom），不是 `origin/master`。优先阅读文末最新节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
 
 0.1.8 更新：默认工作区改为桌面安装目录/agents/backend/Agent名称；浏览器默认源码根/agents，支持 AGENT_ROOM_WORKSPACE_ROOT；旧路径不迁移。添加删除操作，默认保留文件，删除文件需完整路径确认，禁止共用/嵌套工作区、磁盘根、应用数据祖先、符号链接/联接。删除联系人移除单聊入口与群成员，保留群聊记录、底层日志和原后端记录。安装包构建不等于用户已安装版本更新。
 
@@ -519,3 +519,40 @@ WorkBuddy 原生 CLI 默认角色仅列四档。实验表明 web-ui header + mod
 `docs/SIMILAR_PROJECTS.md` 对比六个一手仓库：agentchattr、Agent Chat / multi-agent-collaboration-mcp、AionUi、Claude Squad、Orchestrator.inc / agent-orchestrator、Superset。前两项直接接近共享聊天室，AionUi 同时有多 harness 桌面与团队协作，不能简单描述成多窗口聊天。记录 Superset 的 Elastic License 2.0 与其 README 所述 Windows 尚未提供，避免把所有相似仓库一概称为 MIT/Apache 开源。未安装或实测竞品；不宣称产品唯一或功能优劣已实测。
 
 验证：`output/roadmap-2026-10-23/validation.json`，通过相对文件链接、Markdown 代码围栏、两份 Issue 表单及 config YAML/字段结构检查，确认 16 个候选和版本 0.1.31。此轮仅文档与 GitHub 模板，不运行模型、不重打包或改动本地安装；未重复运行运行时套件，不把以前 115 项结果当作本轮新测试。
+
+## 2026-10-23：Agent 级共享记忆约定（规划，未实现）
+
+用户明确要求按 Agent 隔离 memory：同一 Agent 在单聊、不同群聊中有权接收的内容，都应默认进入自己的同一份共享记忆，并可跨会话调用；不同 Agent 即使使用同一 harness，也各有独立工作区和 memory。群聊仍保留独立原生会话，用来区分当前上下文、消息路由与运行状态，不能用共享 CLI 会话替代记忆服务。
+
+`ROADMAP.md` 新增设计说明与 P0 待办，`docs/HARNESS_INTEGRATION.md` 补充命名空间、来源、并发/去重、恢复和验收要求，`AGENTS.md` 同步后续实现约定。默认写入与检索仅针对该 Agent 有权收到的内容，私聊与匿名投票的既有输出边界继续保留。
+
+当前 0.1.31 已有 Agent 稳定目录与按房间独立的原生会话，尚未实现统一 memory 的自动持久化及跨群检索。手动选择重复/嵌套工作区和旧数据共享目录回退仍需补强；不得直接搬动现有目录。本轮仅修正文档设计，不修改运行代码、版本或用户数据；检查文档差异与格式，不重复运行运行时测试。
+
+## 2026-10-23 0.1.32：按 Agent 共享记忆与独立工作区
+
+用户授权实现，并要求尽量避免真实额度。`lib/agent-memory.cjs` 由独立宿主共享，按稳定 Agent ID 的 SHA-256 分目录追加 JSONL；同一 Agent 的单聊/群聊消息及自身输出自动汇入，不同 Agent 不共用命名空间。启动时从现有 catalog 中各会话的旧日志幂等回填，不重写日志或工作区。新消息保存当时可接收的 Agent 快照，避免后续成员变化扩大历史归属。每轮按本地关键词、中文词片段和最近记录召回其他会话的片段，保留来源、时间和可见范围；不调用摘要或 embedding 模型，当前不是语义检索。
+
+原生会话仍以 Agent×房间分开。显式私聊仅向不会扩大参与者范围的上下文召回；普通单聊内容可供同一 Agent 在群聊使用。原始投票工具结果和匿名个人选票不进入记忆。记忆失败时保留聊天，回复前重试保存，持续失败不派发生成。多房间写入在同一宿主内同步追加并 fsync，按房间/消息去重；重启、改名、换工作区后身份不变。删除群聊保留 Agent 记忆；删除 Agent 不自动删除磁盘记忆，新建同名 Agent 不继承旧身份。
+
+`standalone/workspaces.cjs` 增加规范路径检查，新建/修改目录拒绝重复、嵌套、链接别名、应用与聊天数据目录。旧共享目录保留路径与内容，返回 workspaceIssue 并阻止相关 Agent 使用原生会话，用户可在设置选择独立目录；没有自动复制、搬动或删除旧工作区。Agent 设置新增“查看共享记忆”，支持搜索和来源展示；输出用文本节点，沿用主题与窄窗口布局。详情见 README、docs/PROMPTS.md 和 docs/HARNESS_INTEGRATION.md。
+
+参考 agentchattr 固定快照 d775776a30e8 的实例身份代理、跨频道读取/游标设计；独立实现 Room 记忆，没有复制其代码、改用单个共享原生会话、按键注入或放宽工具权限。真实模型检查未执行；当前验证证明持久化、归属、检索片段与协议传递，不证明真实模型必然正确理解每条旧事实。
+
+验证与产物：
+
+- `output/tests-0.1.32.log`：126/126，0 失败、0 跳过。含本地记忆、HTTP/真实房间引擎、模拟 Claude CLI、并发与截断恢复、旧数据回填、跨单聊/群聊、同 harness 隔离、私聊范围、匿名投票、改名/换目录/重启和保存失败恢复。修正旧测试中默认启动 Codex 的入口与共享目录 fixture，均不调用真实模型。
+- `output/playwright/appearance-12JtSm/report.json`：真实 Chrome、隔离 HTTP/SSE；原有主题/投票/历史/输入栏回归及记忆查看、来源、搜索、390px 通过。模型调用和浏览器异常均为 0；记忆截图同目录。
+- `output/packaged-memory-61S46z/report.json`：最终 0.1.32 程序真实启动与重启，模拟旧历史回填并保持去重、身份与工作区路径，原聊天日志/工作文件 SHA-256 不变；记忆查看界面可用，无生成请求。
+- `output/claude-packaged-6m9tcA/report.json`：最终 ASAR 的 Claude 桥接以模拟 CLI 运行，有/无系统 Node 的两种环境通过，未访问真实 Claude。
+- `output/release-0.1.32/artifact-audit.json`：48 个源文件与最终 ASAR 一致，版本 0.1.32，无聊天/记忆/工作区/测试输出污染。只读当前本机程序核实基线为 0.1.31，生成匹配的增量；在工作区隔离副本实际应用，3 个目标程序文件校验一致，模拟 catalog/聊天/工作区文件保持原哈希。
+- 完整安装包 `dist/Agent-Room-Setup-0.1.32-x64.exe`（102751575 字节）；增量 `dist/Agent-Room-Update-0.1.31-to-0.1.32-x64.zip`（347706 字节）；校验 `dist/SHA256SUMS-0.1.32.txt`。增量仅适用于文件匹配的 0.1.31，解压到安装目录外后使用 Update.cmd。
+
+本轮没有替换真实安装、改写真实聊天/工作区、发起真实模型请求、执行 NSIS 安装/卸载或推送 GitHub。真实安装仍为已读取核对的 0.1.31。程序未新增签名/自动更新；生成与验收产物不能视为用户已升级。后续可在用户授权的升级步骤中沿用备份、精确基线与数据保留流程。
+
+## 2026-10-23：0.1.32 GitHub 源码交付与特点说明
+
+用户授权将当前 0.1.32 提交到 GitHub，并将 Agent 工作区分离作为项目特点。README 首页新增特点说明和对照表：不同 Agent 即使使用同一 harness 也分别使用工作区与 Room 记忆；同一 Agent 跨单聊/群聊保持目录和共享记忆，各房间仍使用独立原生会话。说明新目录冲突校验、旧目录与聊天保留，以及原生全局记忆尚需单独适配的边界。
+
+本次源码交付包含已验证的记忆实现、工作区校验、设置中的记忆查看、回归与打包验证脚本，以及对应文档。运行时实现与前节 126/126、浏览器和打包验证所对应源码一致；本次特点文案不改变运行行为。发布目标为 `agents-chatroom/main`，仓库简介同步突出 per-agent workspaces 与 Room-managed memory。此前“未推送 GitHub”的表述属于发布前阶段记录，发布状态以远端实际提交为准。
+
+仅提交源码、测试、脚本及文档；dist 安装包、增量包、output 验收材料、研究快照、聊天和 Agent 工作区均留在本地。本次不创建 GitHub Release，不替换本机安装，不调用真实模型。

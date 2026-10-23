@@ -44,6 +44,8 @@ lines.on('line', line => {
   if (frame.type !== 'user') return;
   assert.equal(frame.client_composed, true);
   const text = frame.message.content.map(block => block.text).join('\n');
+  if (text.includes('MEMORY_INSPECT')) return finish(JSON.stringify({ sessionId, cwd: process.cwd(),
+    memoryContext: text.match(/\[Agent 共享记忆\][\s\S]*?\[\/Agent 共享记忆\]/)?.[0] || '' }));
   if (text.includes('TEST_GATEWAY_STATE')) return finish(process.env.ANTHROPIC_AUTH_TOKEN === 'LOCAL_FAKE_CREDENTIAL' && !process.env.ANTHROPIC_API_KEY ? 'gateway_configured' : 'incorrect_environment');
   if (text.includes('TEST_GATEWAY_LEAK')) return send({ type: 'result', subtype: 'success', is_error: true, result: 'upstream echoed ' + process.env.ANTHROPIC_AUTH_TOKEN });
   if (text.includes('TEST_API_FAILURE')) return send({ type: 'result', subtype: 'success', is_error: true, result: 'API Error: token=PRIVATE_FIXTURE_VALUE' });

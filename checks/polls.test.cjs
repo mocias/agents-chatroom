@@ -142,8 +142,9 @@ test('desktop Electron runtime can run the stdio bridge from an asar package wit
 
 test('group scheduler invites creator and busy members, suppresses ballot streams, exports only safe history', async t => {
   const { home } = store(t); const bindings = new Map(), rooms = new Map(), turns = [], streams = [];
-  const catalog = { version: 1, agents: members.map(m => ({ ...m, backend: m.id === 'b' ? 'dsh' : 'codex' })),
+  const catalog = { version: 1, agents: members.map(m => ({ ...m, backend: m.id === 'b' ? 'dsh' : 'codex', workspace: path.join(home, 'agents', m.id) })),
     conversations: [{ id: 'group', title: '投票测试', kind: 'group', agentIds: members.map(m => m.id), updatedAt: new Date().toISOString() }] };
+  for (const agent of catalog.agents) fs.mkdirSync(agent.workspace, { recursive: true });
   fs.writeFileSync(path.join(home, 'catalog.json'), JSON.stringify(catalog));
   const app = createApplication({ dataDir: home, workspaceRoot: path.join(home, 'agents'), registerAgent: async () => ({}),
     discoveryInventory: async () => ({ rows: [], warning: '' }), prepareNativeSession: async () => ({}), afterNativeTurn: async () => {},
@@ -197,6 +198,7 @@ test('group scheduler invites creator and busy members, suppresses ballot stream
   const exported = await (await fetch(base + '/api/history/export?room=group&format=json')).text();
   assert.match(exported, /投票测试/); assert.match(exported, /已结束/);
   assert.doesNotMatch(exported, /SECRET_BALLOT|myVote|ballots|attempts/);
+  for (const member of members) assert.doesNotMatch(JSON.stringify(await api('/agents/memory?id=' + member.id)), /SECRET_BALLOT|myVote|ballots|attempts/);
   assert.equal(room.log.filter(r => r.pollId === p.id && r.pollPhase === 'closed').length, 1);
   const recovered = new AgentRoom({ members, segmentMs: 0, queueStallMs: 0, logFile: path.join(home, 'rooms/group.log.jsonl') });
   t.after(() => recovered.dispose());

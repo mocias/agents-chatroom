@@ -297,3 +297,7 @@ dialog .hint { font-size: 12px; }
   .welcome-features { margin-top: 24px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+/* Shared memory uses the same theme and bounded scrolling as other dialogs. */
+#memory-entries { max-height: 48vh; overflow-y: auto; overflow-x: hidden; }
+.memory-entry { padding: 12px 0; border-bottom: 1px solid var(--ar-line); overflow-wrap: anywhere; }
+.memory-entry p { margin: 4px 0; white-space: pre-wrap; }

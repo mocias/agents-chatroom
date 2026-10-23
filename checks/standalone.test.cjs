@@ -103,10 +103,18 @@ test('both WorkBuddy editions can share a group with independent backend and wor
   assert.equal((await env.call('/backend-login', { id: 'codex' })).status, 400);
 });
 test('deleting an Agent requires an explicit workspace choice, keeps group history and protects shared folders', async t => {
-  const env = await start(t, { roomFactory: fakeFactory([]) });
+  let env = await start(t, { roomFactory: fakeFactory([]) });
   const a = (await env.call('/agents', { label: '删除测试', backend: 'dsh' })).data.agent;
-  const b = (await env.call('/agents', { label: '保留测试', backend: 'dsh', workspace: a.workspace })).data.agent;
+  const b = (await env.call('/agents', { label: '保留测试', backend: 'dsh' })).data.agent;
   const group = (await env.call('/groups', { agentIds: [a.id, b.id] })).data.conversation;
+  // Shared assignments can only originate in legacy data now. Preserve the
+  // existing deletion safeguard without creating a new invalid assignment.
+  await env.app.close();
+  const file = path.join(env.dataDir, 'catalog.json');
+  const legacy = JSON.parse(fs.readFileSync(file, 'utf8'));
+  legacy.agents.find(agent => agent.id === b.id).workspace = a.workspace;
+  fs.writeFileSync(file, JSON.stringify(legacy)); b.workspace = a.workspace;
+  env = await start(t, { dataDir: env.dataDir, roomFactory: fakeFactory([]) });
   fs.writeFileSync(path.join(a.workspace, 'keep.txt'), 'keep');
   assert.equal((await env.call('/agents/delete', { id: a.id })).status, 400);
   assert.equal((await env.call('/agents/delete', { id: a.id, deleteWorkspace: true, confirmWorkspace: a.workspace })).status, 400);

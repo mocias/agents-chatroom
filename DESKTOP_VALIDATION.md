@@ -164,3 +164,13 @@ Electron 44.7.2 / electron-builder 26.15.3，Windows x64 NSIS 安装向导。运
 ## 路线图与社区贡献文档检查 · 2026-10-23
 
 本轮仅新增计划、贡献与接入说明、相似项目调研、Issue/PR 模板，运行代码/依赖/版本未变。`output/roadmap-2026-10-23/validation.json`：相对文件链接、Markdown 代码围栏、两份 Issue 表单及 config YAML/字段结构、16 项候选数量和 0.1.31 版本检查通过。调研基于上游官方文档和 GitHub 元数据，不是竞品或候选 harness 的运行验收。没有模型请求、打包、安装更新或权限变更；运行时测试未重复运行。
+
+## 0.1.32 Agent 共享记忆与工作区隔离 · 2026-10-23
+
+- `output/tests-0.1.32.log`：126/126，含 Agent ID 记忆归属、单聊/跨群召回、旧历史回填去重、并发/截断/故障恢复、重启/改名/换目录保留记忆与工作文件、同 harness 的目录冲突和链接别名、显式私聊及匿名投票不泄露。全部推理为模拟，不消费真实模型额度。
+- `output/playwright/appearance-12JtSm/report.json`：真实 Chrome + 隔离 HTTP/SSE，五主题及原有界面回归、记忆来源/搜索/私聊过滤与 390px 展示通过；模型调用、浏览器异常为零。`agent-memory.png`、`agent-memory-mobile.png` 为新入口截图。
+- `output/packaged-memory-61S46z/report.json`：最终 0.1.32 EXE/ASAR 启动与重启，通过旧聊天记忆回填、跨来源查看、不同 Agent 隔离、去重和原日志/工作区文件哈希保留；没有发送生成请求。
+- `output/claude-packaged-6m9tcA/report.json`：ASAR 桥接在有/无系统 Node 环境均通过，使用本地 Claude 协议 fixture，无真实账号/模型访问。
+- `output/release-0.1.32/artifact-audit.json`：最终 ASAR 的 48 个源文件与工作树匹配，无运行时私有数据；基线 0.1.31 增量在隔离副本实际重建 3 个目标文件，哈希及模拟数据/工作文件保留验证通过。
+
+完整安装包、0.1.31→0.1.32 增量和 SHA-256 位于 dist。未更新真实安装或推送 GitHub，未运行 NSIS 安装/卸载。记忆是本地历史检索与有界片段传递，未做真实模型召回质量验收；普通模型回复仍按实际输入（含记忆片段）计费。旧共享工作区保留并阻止生成，自动复制迁移和全局原生记忆隔离不在本轮完成范围。

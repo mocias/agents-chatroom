@@ -5,6 +5,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { AgentRoom } = require('../lib/room.cjs');
 const { AlarmStore } = require('../lib/alarms.cjs');
+const { AgentMemoryStore } = require('../lib/agent-memory.cjs');
 const { PollStore, pollText } = require('../lib/polls.cjs');
 const { PollBroker } = require('../lib/poll-mcp.cjs');
 const { splitMessages } = require('../lib/message-routing.cjs');
@@ -14,7 +15,7 @@ const { BackendDiscovery } = require('./discovery.cjs');
 const { queryModels } = require('./models.cjs');
 const { searchHistory, exportHistory } = require('./history.cjs');
 const { createDataLocation } = require('./data-location.cjs');
-const { chooseWorkspace, assertDeletable } = require('./workspaces.cjs');
+const { chooseWorkspace, assertWorkspace, assertDeletable } = require('./workspaces.cjs');
 const { ensureCodexProject, registerAgent } = require('./desktop-sync.cjs');
 const { inspectDesktop } = require('./desktop-state.cjs');
 const { createDispatcher } = require('./registration-dispatcher.cjs');
@@ -41,6 +42,7 @@ function createApplication(options = {}) {
     if (catalog.agents.some(a => a.backend === backend && !a.workspace)) fs.mkdirSync(workspaceDirs[backend], { recursive: true });
   }
   const api = new RoomApi({ roomsDir, idleRoomTtlMs: 0, maxUploadBytes: 20 * 1024 * 1024 });
+  const memory = new AgentMemoryStore(path.join(dataDir, 'memory'));
   if (!fs.existsSync(path.join(dataDir, 'agent-room-theme', 'theme.json'))) api.theme.update({ preset: 'paper' });
   const runtimes = new Map();
   const deletingRooms = new Set();
@@ -123,6 +125,25 @@ function createApplication(options = {}) {
   for (const agent of catalog.agents) if (['codex', 'dsh', 'workbuddy', 'workbuddy-ai', 'qoder', 'claude'].includes(agent.backend)) scheduleRegistration(agent.id);
   // Preserve old contacts' actual directories; new contacts get their own folder.
   if (catalog.agents.some(a => !a.workspace)) save({ ...catalog, agents: catalog.agents.map(a => a.workspace ? a : { ...a, workspace: workspaceDirs[a.backend] || dataDir }) });
+  // Backfill is additive and idempotent. Never rewrite room logs or workspace files.
+  memory.importHistory(catalog, roomsDir);
+  function workspaceConstraints(exceptId) {
+    const appRoot = path.join(__dirname, '..');
+    return {
+      otherWorkspaces: catalog.agents.filter(agent => agent.id !== exceptId).map(agent => agent.workspace),
+      protectedPaths: [dataDir, appRoot],
+      reservedDirs: ['memory', 'rooms', 'agent-room-files', 'agent-room-theme'].map(name => path.join(dataDir, name))
+        .concat(['standalone', 'lib', 'desktop', 'resources'].map(name => path.join(appRoot, name))),
+    };
+  }
+  function checkWorkspace(member) {
+    const agent = catalog.agents.find(entry => entry.id === member.id);
+    if (!agent) throw new Error('Agent 不存在');
+    assertWorkspace(agent.workspace, workspaceConstraints(agent.id));
+  }
+  function workspaceIssue(agent) {
+    try { checkWorkspace(agent); return null; } catch (error) { return error.message; }
+  }
   function conversation(id) {
     const found = catalog.conversations.find((row) => row.id === id);
     if (!found || deletingRooms.has(id)) throw Object.assign(new Error('会话不存在或正在删除'), { status: 404 });
@@ -139,7 +160,7 @@ function createApplication(options = {}) {
     for (const backend of detected) if (backend.selected) backends[backend.id] = backend.selected.launch;
     const members = row.agentIds.map((key) => ({ ...catalog.agents.find((agent) => agent.id === key),
       ...(row.efforts && Object.hasOwn(row.efforts, key) ? { effort: row.efforts[key] } : {}) }));
-    const room = factory({ id, title: row.title, kind: row.kind, members, backend: members[0]?.backend || 'codex',
+    const room = factory({ id, title: row.title, kind: row.kind, members, backend: members[0]?.backend || 'codex', memory, checkWorkspace,
       createAlarms: (roomId, creatorId, commands) => alarms.createBatch(roomId, creatorId, commands),
       ...(row.kind === 'group' ? {
         pollTools: member => pollBroker.bind(id, member.id),
@@ -318,8 +339,15 @@ function createApplication(options = {}) {
         }
       }
       if (req.method === 'GET' && route === '/api/catalog') {
-        const agents = catalog.agents.map(agent => ({ ...agent, desktopSync: (options.inspectDesktop || inspectDesktop)(agent, { dataDir, conversations: catalog.conversations }) || agent.desktopSync }));
+        const agents = catalog.agents.map(agent => ({ ...agent, memory: memory.stats(agent.id), workspaceIssue: workspaceIssue(agent), desktopSync: (options.inspectDesktop || inspectDesktop)(agent, { dataDir, conversations: catalog.conversations }) || agent.desktopSync }));
         return sendJson(res, 200, { ...catalog, agents, discoveryChoice, canChooseWorkspace: Boolean(options.chooseWorkspaceDirectory), workspaceRoot, harnesses: discovery.publicRows(await discovery.scan()) });
+      }
+      if (req.method === 'GET' && route === '/api/agents/memory') {
+        const agent = catalog.agents.find(entry => entry.id === url.searchParams.get('id'));
+        if (!agent) throw Object.assign(new Error('Agent 不存在'), { status: 404 });
+        const query = (url.searchParams.get('q') || '').trim();
+        if (query.length > 2000) throw new Error('记忆搜索内容不能超过 2000 个字符');
+        return sendJson(res, 200, { ...memory.stats(agent.id), entries: memory.search(agent.id, { query, limit: 50, recentFallback: false }) });
       }
       if (req.method === 'POST' && route === '/api/models') {
         const body = await readJsonBody(req);
@@ -450,7 +478,7 @@ function createApplication(options = {}) {
           if (catalog.agents.some(a => a.label.toLowerCase() === label.toLowerCase())) throw new Error('Agent 名称已存在');
         }
         const agent = { id: 'agent-' + randomUUID(), label, backend: body.backend,
-          workspace: chooseWorkspace(workspaceRoot, body.backend, label, body.workspace),
+          workspace: chooseWorkspace(workspaceRoot, body.backend, label, body.workspace, workspaceConstraints()),
           model: chosen?.id || String(body.model || '').trim().slice(0, 120) || null,
           modelLocked: Boolean(chosen), modelName: chosen ? [chosen.provider, chosen.name].filter(Boolean).join(' · ') : null,
           ...(chosen ? { effort: chosen.defaultEffort || null } : {}),
@@ -536,7 +564,7 @@ function createApplication(options = {}) {
           const active = runtimes.get(c.id);
           if (active && (active.pending || active.room.snapshot().busy.length)) throw new Error('请等待相关会话回复结束后再修改');
         }
-        const workspace = chooseWorkspace(workspaceRoot, agent.backend, agent.label, body.workspace);
+        const workspace = chooseWorkspace(workspaceRoot, agent.backend, agent.label, body.workspace, workspaceConstraints(agent.id));
         const moved = workspace !== agent.workspace;
         configuring = true;
         try {
@@ -615,6 +643,7 @@ function createApplication(options = {}) {
         const onlyAlarms = splitMessages(String(body.text || '')).length > 0 && splitMessages(String(body.text || '')).every(block => block.startsWith('/alarm'));
         const state = await runtime(body.room, onlyAlarms);
         if (!state.room.members.length) throw new Error('该群聊已没有 Agent，仅保留历史记录');
+        if (!onlyAlarms) for (const member of state.room.members) checkWorkspace(member);
         if (!onlyAlarms && !state.room.ready) for (const backend of await discovery.scan()) if (backend.status === 'invalid' && state.room.members.some((m) => m.backend === backend.id)) throw new Error(backend.detail);
         if (configuring) throw new Error('正在更新后端配置，请稍后发送');
         const text = String(body.text || '').trim();

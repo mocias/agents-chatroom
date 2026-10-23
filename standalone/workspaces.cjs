@@ -7,14 +7,37 @@ function folderName(label) {
   if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(name)) name = '_' + name;
   return name;
 }
-function chooseWorkspace(workspaceRoot, backend, label, input) {
+function canonical(value) {
+  const full = path.resolve(value);
+  try { return fs.realpathSync(full); } catch (error) {
+    if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error;
+    const parent = path.dirname(full);
+    return parent === full ? full : path.join(canonical(parent), path.basename(full));
+  }
+}
+const inside = (parent, child) => {
+  const relative = path.relative(parent, child);
+  return relative === '' || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative));
+};
+function assertWorkspace(target, { otherWorkspaces = [], protectedPaths = [], reservedDirs = [] } = {}) {
+  const actual = canonical(target);
+  if (actual === path.parse(actual).root) throw new Error('工作区不能使用磁盘根目录');
+  if (otherWorkspaces.filter(Boolean).some(value => {
+    const other = canonical(value); return inside(actual, other) || inside(other, actual);
+  })) throw new Error('工作区与其他 Agent 重复或相互包含，请选择独立文件夹；现有文件不会移动或删除');
+  if (protectedPaths.some(value => inside(actual, canonical(value))) || reservedDirs.some(value => {
+    const reserved = canonical(value); return inside(actual, reserved) || inside(reserved, actual);
+  })) throw new Error('工作区不能包含应用/聊天数据或使用其内部文件夹，请选择独立文件夹');
+  return actual;
+}
+function chooseWorkspace(workspaceRoot, backend, label, input, constraints = {}) {
   if (typeof input === 'string' && input.trim()) {
     const value = input.trim().replace(/^"(.*)"$/, '$1');
     if (!path.isAbsolute(value)) throw new Error('工作区必须是完整绝对路径');
     let actual;
     try { actual = fs.realpathSync(value); if (!fs.statSync(actual).isDirectory()) throw new Error(); }
     catch { throw new Error('工作区文件夹不存在，请选择已有文件夹'); }
-    return actual;
+    return assertWorkspace(actual, constraints);
   }
   const root = path.join(workspaceRoot, backend);
   try { fs.mkdirSync(root, { recursive: true }); }
@@ -22,7 +45,11 @@ function chooseWorkspace(workspaceRoot, backend, label, input) {
   const base = folderName(label);
   for (let i = 1; i < 10000; i++) {
     const target = path.join(root, base + (i === 1 ? '' : '-' + i));
-    try { fs.mkdirSync(target); return target; }
+    try {
+      fs.mkdirSync(target);
+      try { return assertWorkspace(target, constraints); }
+      catch (error) { fs.rmdirSync(target); throw error; } // Only our new, empty directory.
+    }
     catch (error) { if (error.code !== 'EEXIST') throw error; }
   }
   throw new Error('同名工作区过多，请手动选择文件夹');
@@ -42,4 +69,4 @@ function assertDeletable(target, { protectedPaths = [], otherWorkspaces = [] } =
   if (fs.existsSync(resolved)) check(resolved);
   return resolved;
 }
-module.exports = { folderName, chooseWorkspace, assertDeletable };
+module.exports = { folderName, chooseWorkspace, assertWorkspace, assertDeletable };

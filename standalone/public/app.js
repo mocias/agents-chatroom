@@ -164,7 +164,7 @@ function addAgent() {
     if (result.agent.desktopSync?.status !== 'registered') toast(result.agent.desktopSync?.detail || '桌面同步待处理');
   }, '添加并开始聊天');
   const choose = $('#choose-workspace'); choose.hidden = !state.canChooseWorkspace;
-  $('#workspace-hint').textContent = '留空将创建在 ' + state.workspaceRoot + ' 下；同一 Agent 在各群聊中共用文件夹，对话独立。';
+  $('#workspace-hint').textContent = '留空将创建在 ' + state.workspaceRoot + ' 下；每位 Agent 使用独立文件夹和记忆，同一 Agent 跨单聊与群聊共享记忆。';
   choose.onclick = async () => { try { const result = await api('/workspace/browse', {}); if (result.path && $('#modal-content [name="workspace"]')) $('#modal-content [name="workspace"]').value = result.path; } catch(error) { toast(error.message); } };
   const select = $('#modal-content select');
   const hint = () => { const found = state.harnesses.find((h) => h.id === select.value); $('#backend-hint').textContent = select.value === 'claude' ? '支持终端版，或复用 Claude 桌面端当前 Gateway API 配置；Room 中的会话独立。' : found?.found || found?.configured ? '使用本机后端的登录状态。首次发送时连接。' : '可以先添加。聊天前需安装并登录此后端，或在本地后端配置中指定启动路径。'; };
@@ -262,6 +262,15 @@ async function memberEffort(agentId, roomId) {
     await refresh(); $('#modal').close(); toast('设置已保存');
   }, '保存设置');
   const select = $('#modal-content [name="effort"]');
+  const memoryNote = document.createElement('p'); memoryNote.className = 'hint'; memoryNote.id = 'agent-memory-status';
+  memoryNote.textContent = '这位 Agent 在单聊和群聊中共享自己的记忆；其他 Agent 不会继承。改名或更换工作区后记忆仍保留。';
+  const memoryButton = document.createElement('button'); memoryButton.type = 'button'; memoryButton.id = 'view-agent-memory'; memoryButton.textContent = '查看共享记忆';
+  memoryButton.onclick = () => showAgentMemory(agent);
+  $('#modal-content').append(memoryNote, memoryButton);
+  if (agent.workspaceIssue) {
+    const issue = document.createElement('p'); issue.className = 'hint'; issue.textContent = agent.workspaceIssue;
+    $('#modal-content').append(issue);
+  }
   const syncNote = document.createElement('p'); syncNote.className = 'hint'; syncNote.id = 'desktop-sync-status';
   syncNote.textContent = agent.desktopSync?.detail || '尚未检查桌面工作区登记。';
   const syncButton = document.createElement('button'); syncButton.type = 'button'; syncButton.id = 'check-desktop-sync'; syncButton.textContent = '检查桌面登记';
@@ -287,6 +296,32 @@ async function memberEffort(agentId, roomId) {
     if (efforts.length) select.value = row.efforts?.[agentId] || agent.effort || model.defaultEffort || efforts[0];
     $('#effort-loading').textContent = efforts.length ? '' : '后端未提供可调整的推理档位，仍可修改工作区。';
   } catch(e) { if (select.isConnected) { select.innerHTML = '<option value="">保持原设置</option>'; $('#effort-loading').textContent = '推理档位读取失败：' + e.message + '。仍可修改工作区。'; } }
+}
+function showAgentMemory(agent) {
+  showModal('共享记忆 · ' + agent.label, '<p class="hint">来自这位 Agent 的单聊和群聊。历史内容会自动记入，回复时按需检索；这里最多显示 50 条，搜索可以找到更早的记录。</p><label class="field">搜索记忆<input name="memoryQuery" maxlength="2000" placeholder="输入关键词，例如项目约定"></label><p class="hint" id="memory-count">正在读取…</p><div id="memory-entries"></div>', async form => {
+    await load(new FormData(form).get('memoryQuery'));
+  }, '搜索记忆');
+  const container = $('#memory-entries'), count = $('#memory-count');
+  let generation = 0;
+  const load = async query => {
+    const ticket = ++generation;
+    try {
+      const data = await api('/agents/memory?id=' + encodeURIComponent(agent.id) + '&q=' + encodeURIComponent(query || ''));
+      if (!container.isConnected || ticket !== generation) return;
+      count.textContent = '已保存 ' + data.count + ' 条记忆，本次显示 ' + data.entries.length + ' 条。';
+      container.replaceChildren();
+      for (const entry of data.entries) {
+        const card = document.createElement('article'); card.className = 'memory-entry';
+        const source = document.createElement('p'); source.className = 'hint';
+        source.textContent = (entry.roomKind === 'direct' ? '单聊' : '群聊') + ' · ' + entry.roomTitle + ' · ' + entry.authorLabel +
+          (entry.ts ? ' · ' + new Date(entry.ts).toLocaleString() : '') + (entry.visibility === 'private' ? ' · 私聊' : '');
+        const text = document.createElement('p'); text.textContent = entry.text;
+        card.append(source, text); container.append(card);
+      }
+      if (!data.entries.length) container.textContent = data.count ? '没有找到相关记忆。' : '还没有记忆，开始聊天后会自动记录。';
+    } catch (error) { if (container.isConnected && ticket === generation) count.textContent = '记忆读取失败：' + error.message; }
+  };
+  void load('');
 }
 function showMembers(mention = false) {
   const row = state.conversations.find(c => c.id === state.current); if (!row) return;

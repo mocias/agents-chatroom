@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { folderName, chooseWorkspace, assertDeletable } = require('../standalone/workspaces.cjs');
+const { folderName, chooseWorkspace, assertWorkspace, assertDeletable } = require('../standalone/workspaces.cjs');
 const { AgentRoom } = require('../lib/room.cjs');
 test('workspace defaults sanitize names and never reuse colliding existing directories', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'workspaces-'));
@@ -35,4 +35,30 @@ test('workspace removal refuses roots and ancestors of app or other agent direct
   assert.throws(() => assertDeletable(root, { protectedPaths: [child] }), /不能删除/);
   assert.throws(() => assertDeletable(child, { otherWorkspaces: [root] }), /不能删除/);
   assert.equal(assertDeletable(child, { protectedPaths: [root] }), child);
+});
+
+test('workspace assignments reject equal/nested/aliased roots even across harnesses', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-isolation-'));
+  const first = chooseWorkspace(root, 'claude', 'A');
+  const child = path.join(first, 'child'); fs.mkdirSync(child);
+  const constraints = { otherWorkspaces: [first] };
+  for (const target of [first, child, path.dirname(first)]) {
+    assert.throws(() => chooseWorkspace(root, 'dsh', 'B', target, constraints), /其他 Agent/);
+  }
+  const alias = path.join(root, 'alias');
+  fs.symlinkSync(first, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.throws(() => assertWorkspace(alias, constraints), /其他 Agent/);
+  if (process.platform === 'win32') assert.throws(() => assertWorkspace(first.toUpperCase(), constraints), /其他 Agent/);
+  const second = chooseWorkspace(root, 'claude', 'B', '', constraints);
+  assert.notEqual(second, first);
+  assert.equal(fs.statSync(child).isDirectory(), true);
+});
+
+test('protected memory/data directories cannot become another Agent workspace', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-memory-'));
+  const memory = path.join(root, 'memory'); fs.mkdirSync(memory);
+  const child = path.join(memory, 'agent'); fs.mkdirSync(child);
+  const constraints = { protectedPaths: [root], reservedDirs: [memory] };
+  for (const target of [root, memory, child]) assert.throws(() => assertWorkspace(target, constraints), /应用\/聊天数据/);
+  assert.equal(chooseWorkspace(root, 'claude', 'A', '', constraints), path.join(root, 'claude', 'A'));
 });
