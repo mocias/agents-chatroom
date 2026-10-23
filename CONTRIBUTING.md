@@ -4,17 +4,17 @@
 
 ## 贡献与合并方式
 
-本项目采用 [MIT 许可证](LICENSE)。外部开发者可以 Fork 后修改，再向 [mocias/agents-chatroom 的 main](https://github.com/mocias/agents-chatroom/pulls) 发起 Pull Request，由维护者审核合并。这里的“开放贡献”是欢迎提交和审查 PR；它不授予所有人直接推送或合并他人 PR 的权限，也不代表已启用自动合并。
+本项目采用 [MIT 许可证](LICENSE)。外部开发者可以 Fork 后修改，再向 [mocias/agentschat 的 main](https://github.com/mocias/agentschat/pulls) 发起 Pull Request，由维护者审核合并。这里的“开放贡献”是欢迎提交和审查 PR；它不授予所有人直接推送或合并他人 PR 的权限，也不代表已启用自动合并。
 
-后续接入清单见 [ROADMAP.md](ROADMAP.md)。新增后端可先提交 [harness 提案](https://github.com/mocias/agents-chatroom/issues/new?template=harness_request.yml)；普通问题使用 [Bug 模板](https://github.com/mocias/agents-chatroom/issues/new?template=bug_report.yml)。贡献研究、文档或隔离测试也有价值，可以先开 Draft PR 并说明未完成项。
+后续接入清单见 [ROADMAP.md](ROADMAP.md)。新增后端可先提交 [harness 提案](https://github.com/mocias/agentschat/issues/new?template=harness_request.yml)；普通问题使用 [Bug 模板](https://github.com/mocias/agentschat/issues/new?template=bug_report.yml)。贡献研究、文档或隔离测试也有价值，可以先开 Draft PR 并说明未完成项。
 
 ## 本地开发
 
 推荐 Windows x64、Node.js 24 LTS 与 npm。当前产品首先验证 Windows；其他系统的通过结果请单独记录，不据此宣称全部桌面后端都已跨平台。
 
 ```sh
-git clone https://github.com/YOUR-ACCOUNT/agents-chatroom.git
-cd agents-chatroom
+git clone https://github.com/YOUR-ACCOUNT/agentschat.git
+cd agentschat
 npm ci
 npm test
 ```
@@ -60,4 +60,4 @@ PR 描述请使用仓库模板，简述问题、最终行为、验证证据与�
 | `checks/`、`scripts/` | 本地回归、隔离 UI 与显式真实验收 |
 | `desktop/` | Electron、安装与增量升级 |
 
-本指南描述贡献流程，未配置强制分支保护或自动审批。发布目标是 `mocias/agents-chatroom`；`mocias/dsh-agent-room` 是保留的原上游，不要误推。
+本指南描述贡献流程，未配置强制分支保护或自动审批。发布目标是 `mocias/agentschat`；`mocias/dsh-agent-room` 是保留的原上游，不要误推。

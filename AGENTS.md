@@ -2,12 +2,12 @@
 
 ## 当前入口
 
-- 0.1.34 起项目/桌面显示名为 `agentschat`，package.productName 与 builder.productName 对齐。DSH 内部 npm 包名、客户端注册 ID、服务端导出名与 patch specifier 保持 `dsh-agent-room` 一致。为兼容既有升级，保留 appId `com.mocias.agentroom`、`Agent Room.exe`、`%APPDATA%/Agent Room`、环境变量/API/存储键及插件路由。不得因改名直接迁移用户目录。新安装包为 `agentschat-Setup-*`；增量更新新旧卸载程序时保持原注册的目标文件名。远端仓库名与本地目录未改。
+- 0.1.34 起项目/桌面显示名为 `agentschat`，package.productName 与 builder.productName 对齐。DSH 内部 npm 包名、客户端注册 ID、服务端导出名与 patch specifier 保持 `dsh-agent-room` 一致。为兼容既有升级，保留 appId `com.mocias.agentroom`、`Agent Room.exe`、`%APPDATA%/Agent Room`、环境变量/API/存储键及插件路由。不得因改名直接迁移用户目录。新安装包为 `agentschat-Setup-*`；增量更新新旧卸载程序时保持原注册的目标文件名。GitHub 仓库与发布 remote 均为 agentschat；本地源码目录沿用原名。
 - 独立 UI 的三栏布局位于 `standalone/public/chat-layout.css`，在原 app.css 后加载；所有颜色跟随主题变量。导航按钮必须有实际入口与可访问名称，保留 Codex/DSH 的会话与输入选项。
 
 - 先读 `HANDOFF.md` 的最新版本节、`README.md` 和 `DESKTOP_VALIDATION.md`。版本以 `package.json` 为准，历史验收数字不能当成当前检查结果。
 - 主产品是 `desktop/main.cjs`、`standalone/` 与 `lib/room.cjs`；`lib/index.js` 和 `public/` 是旧 DSH 插件入口。投票目前接入独立应用，不能宣称旧插件也已支持。
-- GitHub 发布目标为 remote `agents-chatroom` 的 `main`，即 https://github.com/mocias/agents-chatroom。本地分支名和默认 upstream 可能仍是 `master` / `origin`，不要据此误推旧仓库。提交、推送或发布须有用户授权；推送前 fetch 并检查远端分歧，不强推。
+- GitHub 发布目标为 remote `agentschat` 的 `main`，即 https://github.com/mocias/agentschat。本地分支名仍可能为 `master`，当前 upstream 应指向 `agentschat/main`，不要据此误推旧仓库。提交、推送或发布须有用户授权；推送前 fetch 并检查远端分歧，不强推。
 - 后续计划见 `ROADMAP.md`，社区贡献与适配验收见 `CONTRIBUTING.md`、`docs/HARNESS_INTEGRATION.md`；候选清单不代表已接入，不能未验证就改 README 的已适配状态。外部贡献通过 Fork/PR，由维护者审核合并。
 
 ## 功能边界

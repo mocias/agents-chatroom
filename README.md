@@ -38,7 +38,7 @@
 - 窄导航栏 + 会话列表 + 聊天区三栏布局；绿色选中态、浅灰背景、方形头像与绿色消息气泡，输入区贴底显示。
 - 左侧入口分别查看全部聊天、Agents 和群聊，底部打开后端管理和外观设置。保留 Codex / DSH 的展开会话、新建、重命名、置顶及各自输入选项。
 - 为兼容旧安装，保留 `com.mocias.agentroom` 安装标识、`Agent Room.exe` 程序文件名、`%APPDATA%/Agent Room` 数据定位和已有 `AGENT_ROOM_*` 配置；不自动移动个人数据或工作区。精确增量升级继续使用旧快捷方式，新安装快捷方式显示 agentschat。
-- 本地仓库目录与 GitHub 地址保持现状，本轮没有重命名远端仓库。DSH 宿主要求包名与客户端注册 ID 一致，因此内部 npm 包名、插件 ID 保留 `dsh-agent-room`，路由和数据键也保留兼容；产品显示名称使用 agentschat。
+- GitHub 仓库已改名为 [mocias/agentschat](https://github.com/mocias/agentschat)，本地源码目录沿用原名。DSH 宿主要求包名与客户端注册 ID 一致，因此内部 npm 包名、插件 ID 保留 `dsh-agent-room`，路由和数据键也保留兼容；产品显示名称使用 agentschat。
 
 ## 0.1.33 Agent 下的多个会话（Codex / DSH）
 
@@ -129,7 +129,7 @@
 | 后续扩展 | CodeBuddy Code CLI、Cursor CLI、Goose、Mistral Vibe、Auggie、Factory Droid |
 | 条件调研 / 社区候选 | Gemini CLI、Google Antigravity CLI、Kiro CLI、OpenHands、Pi、Aider |
 
-完整依据、版本迁移提醒、优化优先级与认领方式见 [路线图](ROADMAP.md)。实现或测试适配前请读 [贡献指南](CONTRIBUTING.md) 和 [接入验收指南](docs/HARNESS_INTEGRATION.md)；可通过 [harness 提案](https://github.com/mocias/agents-chatroom/issues/new?template=harness_request.yml) 参与。GitHub 上的相似项目及可借鉴方向见 [项目调研](docs/SIMILAR_PROJECTS.md)。
+完整依据、版本迁移提醒、优化优先级与认领方式见 [路线图](ROADMAP.md)。实现或测试适配前请读 [贡献指南](CONTRIBUTING.md) 和 [接入验收指南](docs/HARNESS_INTEGRATION.md)；可通过 [harness 提案](https://github.com/mocias/agentschat/issues/new?template=harness_request.yml) 参与。GitHub 上的相似项目及可借鉴方向见 [项目调研](docs/SIMILAR_PROJECTS.md)。
 
 ### 桌面工作区登记（0.1.28）
 
@@ -158,7 +158,7 @@ Codex、WorkBuddy、Qoder 必须完全退出（包括托盘），为安全写入
 
 ## 下载
 
-前往 [GitHub Releases](https://github.com/mocias/agents-chatroom/releases/latest) 下载 Windows x64 安装包。已有用户可以覆盖安装，或使用与当前版本匹配的增量更新包。
+前往 [GitHub Releases](https://github.com/mocias/agentschat/releases/latest) 下载 Windows x64 安装包。已有用户可以覆盖安装，或使用与当前版本匹配的增量更新包。
 
 ## 许可
 

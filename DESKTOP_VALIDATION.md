@@ -198,3 +198,13 @@ Electron 44.7.2 / electron-builder 26.15.3，Windows x64 NSIS 安装向导。运
 - `output/release-0.1.34/artifact-audit.json`：49 个文件与 ASAR 一致，productName/内部包名/版本/入口核对通过；从准确 0.1.31、0.1.32、0.1.33 各生成增量并实际应用到隔离副本，程序哈希和模拟数据保留通过。
 
 产品显示名与安装包使用 agentschat；内部 npm/DSH 注册标识、appId、程序文件名和数据定位保持兼容。精确增量沿用旧快捷方式，完整新安装使用 agentschat 快捷方式；未执行真实安装升级或 NSIS 安装/卸载。保留旧插件标识的合同检查不代表本轮真实加载旧 DSH 插件。未发布或重命名远端仓库。
+
+## 真实安装更新与仓库改名 · 2026-10-24
+
+- GitHub 仓库为 [mocias/agentschat](https://github.com/mocias/agentschat)，改名前后仓库 ID 1421773944 一致；main 与原历史保留，本地发布 remote 和文档链接已同步，原上游 origin 不变。
+- `output/local-update-0.1.34-7ngkR1/prepare.json`：准确 0.1.31 基线和已验证增量匹配，34 个现存数据/工作区文件备份通过；记录一个升级前就缺失的 DSH 工作区，未重建。
+- `installed-update.json`：真实安装更新到 0.1.34，3 个程序文件 SHA-256 匹配；启动前其余受保护数据内容不变，DSH 桥接动态回执只有 checkedAt 刷新。程序备份位于安装目录 `.update-backup-0.1.31-3365512644234e9bbdc5ee62e4dad4be`。
+- `installed-startup.json`：真实程序启动后页面/应用/菜单均显示 agentschat，数据路径保持 `D:/agent room data`，4 位 Agent、5 个会话及身份/模型/目录保留，Codex 多会话入口可读。退出后原日志、附件和现存工作区文件哈希不变；生成/模型目录请求均为 0，浏览器异常为 0。
+- `shortcuts.json`：桌面、开始菜单快捷方式已备份并改名 agentschat，仍指向同一程序；检查完成后重新启动，窗口标题已核对。
+
+本轮未改运行代码，沿用此前 130 项回归；真实启动不等于真实模型回复验证，缺失的 DSH 工作区仍需用户后续指定。未执行 NSIS 安装/卸载，未创建 GitHub Release；个人备份与测试证据只保存在本地 output。

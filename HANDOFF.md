@@ -1,6 +1,6 @@
 # agentschat — Handoff
 
-交接更新：2026-10-24。当前源码版本 0.1.34；项目改名 agentschat，界面采用微信风格三栏布局，验收和产物见文末最新节。0.1.33 的 Codex / DSH 多会话和独立输入布局继续保留。0.1.32 的 Agent 共享记忆和工作区隔离继续保留。此前已将本机 `D:/Agent Room` 从 0.1.28 升级至 0.1.31，本轮不替换真实安装。发布目标为 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom），不是 `origin/master`。优先阅读文末最新节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。产品显示名改为 agentschat；保留内部 npm 包名 dsh-agent-room、原 MIT LICENSE、旧安装/数据标识和插件入口兼容。本文区分已实现、已验证和未完成事项。
+交接更新：2026-10-24。当前源码和本机安装版本均为 0.1.34；GitHub 仓库已改名 agentschat，界面采用微信风格三栏布局，验收和产物见文末最新节。0.1.33 的 Codex / DSH 多会话和独立输入布局继续保留。0.1.32 的 Agent 共享记忆和工作区隔离继续保留。本机已从 0.1.31 更新并启动，原聊天和现存工作区保留；升级前已有一个 DSH 工作区缺失，未自动重建。发布目标为 `agentschat/main`（https://github.com/mocias/agentschat），不是 `origin/master`。优先阅读文末最新节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。产品显示名改为 agentschat；保留内部 npm 包名 dsh-agent-room、原 MIT LICENSE、旧安装/数据标识和插件入口兼容。本文区分已实现、已验证和未完成事项。
 
 0.1.8 更新：默认工作区改为桌面安装目录/agents/backend/Agent名称；浏览器默认源码根/agents，支持 AGENT_ROOM_WORKSPACE_ROOT；旧路径不迁移。添加删除操作，默认保留文件，删除文件需完整路径确认，禁止共用/嵌套工作区、磁盘根、应用数据祖先、符号链接/联接。删除联系人移除单聊入口与群成员，保留群聊记录、底层日志和原后端记录。安装包构建不等于用户已安装版本更新。
 
@@ -603,6 +603,18 @@ WorkBuddy 原生 CLI 默认角色仅列四档。实验表明 web-ui header + mod
 
 ## 2026-10-24：0.1.34 GitHub 源码交付
 
-用户授权提交并推送当前实现至 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom）。推送前获取远端 main 并核对本地基线一致；交付包含 0.1.33 多会话功能、0.1.34 agentschat 显示名称与微信风格界面、回归脚本、兼容升级逻辑、隔离演示截图及文档。运行代码沿用上述 130 项与最终打包验收对应版本，本次整理交付说明不改变运行行为。
+用户授权提交并推送当前实现至 `agents-chatroom/main`（https://github.com/mocias/agentschat）。推送前获取远端 main 并核对本地基线一致；交付包含 0.1.33 多会话功能、0.1.34 agentschat 显示名称与微信风格界面、回归脚本、兼容升级逻辑、隔离演示截图及文档。运行代码沿用上述 130 项与最终打包验收对应版本，本次整理交付说明不改变运行行为。
 
 仅交付源码和仓库文档；安装包、增量包、测试输出、聊天记录、个人工作区、第三方依赖和用户微信参考截图不进入提交。不创建 GitHub Release，不更改远端仓库名称，不替换本机安装。前文“未推送”描述开发验收时状态，发布状态以远端 main 的提交记录为准。
+
+## 2026-10-24：GitHub 仓库改名与本机 0.1.34 更新
+
+用户明确授权 GitHub 仓库改名 agentschat、更新本地远端和文档链接，并更新本地安装。仓库从 `mocias/agents-chatroom` 改为 `mocias/agentschat`，仓库 ID 1421773944、main 分支、public 可见性和历史保留；改名前后 main 均从 5e69b33 继续。本地发布 remote 改名为 `agentschat`，fetch/push URL 为 `https://github.com/mocias/agentschat.git`，当前 master 的 upstream 为 `agentschat/main`；`origin` 仍是原上游 `mocias/dsh-agent-room`。源码目录和内部 npm/插件标识保持兼容。README、贡献/路线图、AGENTS、交接文档及 Issue 模板链接已同步；历史段落中的旧 remote 名保留为当时事实。
+
+真实安装 `D:/Agent Room` 从准确 0.1.31 基线应用已有的 0.1.31→0.1.34 增量，替换 3 个程序文件，SHA-256 与已验收产物一致。程序备份：`D:/Agent Room/.update-backup-0.1.31-3365512644234e9bbdc5ee62e4dad4be`。数据和工作区备份：`output/local-update-0.1.34-7ngkR1/user-backup/`，共 34 个现存文件；备份逐文件校验一致。
+
+启动前核对发现 DSH 登记回执 `desktop-sync/dsh.json` 的 `checkedAt` 仍被已运行的 DSH 桥接每 15 秒刷新，只有该时间字段变化，其余内容与备份一致；不能声称这一动态回执逐字节不变。正式数据路径保持 `D:/agent room data`，4 位 Agent、5 个会话的身份、模型、工作区路径、会话 ID/标题/成员保留。真实启动后 agentschat 窗口/菜单/版本正确，Codex 展开会话可用；退出后的旧聊天、附件和全部现存工作区文件校验保持一致。未发送模型请求或测试聊天。
+
+升级前一个 DSH 工作区目录已经不存在，备份中明确记录缺失；升级和检查均未重建、还原或改变该路径。这个旧状态不算升级造成的数据丢失，也不代表该 DSH Agent 已验证可正常生成。需要后续由用户指定工作区后再继续验证。
+
+桌面与开始菜单快捷方式先备份再改名为 agentschat，目标仍是 `D:/Agent Room/Agent Room.exe`；完成检查后重新启动，新窗口标题为 agentschat。未修改卸载注册项、安装根目录或其他应用。证据：`output/local-update-0.1.34-7ngkR1/prepare.json`、`installed-update.json`、`installed-startup.json`、`shortcuts.json`。本次运行代码未改，不重复 130 项套件；仅做文档链接核对、精确升级与真实启动/数据保留验收。前文“未改名/未替换正式安装”属于之前阶段，本节为最新状态。没有创建 GitHub Release 或上传个人数据、安装包。

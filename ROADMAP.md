@@ -1,6 +1,6 @@
 # agentschat 路线图
 
-更新：2026-10-23。当前源码为 0.1.32；本页包含已完成的记忆基础版与后续计划，不表示新 harness 已接入，也不承诺发布日期。欢迎通过 [Issue](https://github.com/mocias/agents-chatroom/issues) 认领研究、实现或实测，并提交 PR；维护者依据 [贡献指南](CONTRIBUTING.md) 审核合并。
+更新：2026-10-24。当前源码为 0.1.34；本页包含已完成的记忆基础版与后续计划，不表示新 harness 已接入，也不承诺发布日期。欢迎通过 [Issue](https://github.com/mocias/agentschat/issues) 认领研究、实现或实测，并提交 PR；维护者依据 [贡献指南](CONTRIBUTING.md) 审核合并。
 
 ## 产品方向
 
@@ -84,9 +84,9 @@ Kimi 的 [旧 kimi-cli 仓库](https://github.com/MoonshotAI/kimi-cli) 已标注
 
 ## 如何参与
 
-1. 从上述清单选择一项，使用 [harness 接入提案](https://github.com/mocias/agents-chatroom/issues/new?template=harness_request.yml) 给出当前官方入口、版本、系统和拟验证范围；没有账户也可先贡献研究或模拟协议测试。
+1. 从上述清单选择一项，使用 [harness 接入提案](https://github.com/mocias/agentschat/issues/new?template=harness_request.yml) 给出当前官方入口、版本、系统和拟验证范围；没有账户也可先贡献研究或模拟协议测试。
 2. 在 Issue 说明认领意向；没有认领不代表已有人实现，也不要求贡献者必须完成真实模型验证才能先提交 Draft PR。
 3. 按 [适配接入与验收指南](docs/HARNESS_INTEGRATION.md) 做小范围、可回退的变更；在 PR 中分别列源码、模拟协议、真实后端、打包和安装的结果。
-4. 向 `mocias/agents-chatroom` 的 `main` 提交 PR，由维护者审查合并。第一批优先，其他候选同样欢迎有证据的 PR；无需申请仓库写权限。
+4. 向 `mocias/agentschat` 的 `main` 提交 PR，由维护者审查合并。第一批优先，其他候选同样欢迎有证据的 PR；无需申请仓库写权限。
 
 相似项目与可借鉴的设计见 [GitHub 项目调研](docs/SIMILAR_PROJECTS.md)。本次路线图不新增任何运行中的 harness、真实模型调用或自动合并机制。
