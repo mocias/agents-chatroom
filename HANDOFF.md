@@ -1,6 +1,6 @@
 # Agents Chatroom — Handoff
 
-交接更新：2026-10-22。当前源码版本 0.1.31，已打包并将本机 `D:/Agent Room` 从 0.1.28 增量升级至 0.1.31。发布目标为 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom），不是 `origin/master`。优先阅读文末最新节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
+交接更新：2026-10-23。当前源码版本 0.1.31；本轮新增路线图、社区贡献入口和相似项目调研，不修改运行行为。此前已打包并将本机 `D:/Agent Room` 从 0.1.28 增量升级至 0.1.31。发布目标为 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom），不是 `origin/master`。优先阅读文末最新节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
 
 0.1.8 更新：默认工作区改为桌面安装目录/agents/backend/Agent名称；浏览器默认源码根/agents，支持 AGENT_ROOM_WORKSPACE_ROOT；旧路径不迁移。添加删除操作，默认保留文件，删除文件需完整路径确认，禁止共用/嵌套工作区、磁盘根、应用数据祖先、符号链接/联接。删除联系人移除单聊入口与群成员，保留群聊记录、底层日志和原后端记录。安装包构建不等于用户已安装版本更新。
 
@@ -509,3 +509,13 @@ WorkBuddy 原生 CLI 默认角色仅列四档。实验表明 web-ui header + mod
 ### 2026-10-22 README 示例图替换
 
 按用户明确要求，将 README 示例图替换为用户上传的实际使用截图，原样保存在 `docs/images/agent-room-multi-harness.png`，复制后 SHA-256 与上传文件一致。图片说明同步改为实际使用截图，展示 Codex、WorkBuddy AI、DSH、Qoder；不再称其为隔离演示数据。此轮仅更新文档和图片，不涉及程序、版本或本地数据。
+
+## 2026-10-23：后续 harness 路线图、开放贡献与 GitHub 调研
+
+按用户要求整理 16 项后续候选，第一批为 OpenCode、Qwen Code、Kimi Code CLI、GitHub Copilot CLI。所有候选保持待接入/调研状态，不改当前六个后端的实现或适配结论。`ROADMAP.md` 为计划入口，包含官方依据、Windows/WSL 和授权前提、优先级，以及统一注册、诊断/恢复、接力预算、上下文/附件等优化事项。注意 Kimi 旧仓库归档迁移，Gemini CLI 部分使用路径迁往 Antigravity，当前文档优先于旧生态目录。
+
+新增 `CONTRIBUTING.md`、`docs/HARNESS_INTEGRATION.md`、harness 提案/Bug Issue 表单与 PR 模板；README 增加接入计划和贡献入口。协作方式为外部 Fork/PR、维护者审核合并，不授予未指定人员仓库写权限，不自动合并。GitHub 实时核对：仓库 public，允许 Fork，Issues 与三种 PR 合并方式已开启，无仓库级 interaction limit；本轮未修改访问权限、分支保护或自动合并设置。PR CI 仍是路线图待办，不能说已强制自动检查。
+
+`docs/SIMILAR_PROJECTS.md` 对比六个一手仓库：agentchattr、Agent Chat / multi-agent-collaboration-mcp、AionUi、Claude Squad、Orchestrator.inc / agent-orchestrator、Superset。前两项直接接近共享聊天室，AionUi 同时有多 harness 桌面与团队协作，不能简单描述成多窗口聊天。记录 Superset 的 Elastic License 2.0 与其 README 所述 Windows 尚未提供，避免把所有相似仓库一概称为 MIT/Apache 开源。未安装或实测竞品；不宣称产品唯一或功能优劣已实测。
+
+验证：`output/roadmap-2026-10-23/validation.json`，通过相对文件链接、Markdown 代码围栏、两份 Issue 表单及 config YAML/字段结构检查，确认 16 个候选和版本 0.1.31。此轮仅文档与 GitHub 模板，不运行模型、不重打包或改动本地安装；未重复运行运行时套件，不把以前 115 项结果当作本轮新测试。

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 后续计划与 harness 清单
+    url: https://github.com/mocias/agents-chatroom/blob/main/ROADMAP.md
+    about: 查看候选应用、优先级和待认领事项
+  - name: 贡献与合并指南
+    url: https://github.com/mocias/agents-chatroom/blob/main/CONTRIBUTING.md
+    about: 了解 Fork、PR、验证要求和维护者审核流程

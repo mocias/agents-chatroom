@@ -1,0 +1,30 @@
+name: 问题反馈
+description: 报告 Agent Room 的可复现问题
+title: "[Bug] "
+body:
+  - type: input
+    id: versions
+    attributes:
+      label: Agent Room、系统与 harness 版本
+      placeholder: 安装版/源码版；Windows/WSL/macOS/Linux；harness 名称与版本
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 尽量使用临时会话/工作区，不上传正式聊天和账号目录。
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: 预期结果与实际结果
+      description: 错误发生在发现、登录、模型查询、发送、生成、工具、重启还是更新阶段？
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏错误、日志与截图
+      description: 删除令牌、账号信息、私人路径与聊天；注明测试命令和哪些检查尚未执行。

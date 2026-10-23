@@ -1,0 +1,52 @@
+name: Harness 接入提案
+description: 提议或认领一个新的 Agent harness 适配
+title: "[Harness] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先查看 ROADMAP.md 和 CONTRIBUTING.md。欢迎研究、实现和测试贡献；列入计划不代表已适配。不要粘贴凭据或个人聊天。
+  - type: input
+    id: harness
+    attributes:
+      label: Harness 应用名称与厂商
+      placeholder: 应用/CLI 名称，不是模型名称
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: 官方接口与版本依据
+      description: 提供官网、仓库、ACP/SDK/结构化接口文档，以及要适配的版本。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 平台、启动入口与授权前提
+      description: 区分 Windows 原生/WSL/macOS/Linux；描述登录方式、运行依赖和已核对的启动命令，不附密钥。
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: 拟支持的能力与已知限制
+      description: 单聊/群聊、模型选择、流式/停止、会话恢复、MCP、图片、权限和工作区分别说明；未确认写未知。
+    validations:
+      required: true
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: 我希望参与的部分
+      options:
+        - 提议接入，暂不认领实现
+        - 认领接口调研或文档
+        - 认领适配实现与自动测试
+        - 提供真实后端或平台验收
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 已做检查与后续验证计划
+      description: 分开说明文档核对、模拟协议、真实后端和打包结果；没有执行的检查请注明。

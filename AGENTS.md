@@ -5,6 +5,7 @@
 - 先读 `HANDOFF.md` 的最新版本节、`README.md` 和 `DESKTOP_VALIDATION.md`。版本以 `package.json` 为准，历史验收数字不能当成当前检查结果。
 - 主产品是 `desktop/main.cjs`、`standalone/` 与 `lib/room.cjs`；`lib/index.js` 和 `public/` 是旧 DSH 插件入口。投票目前接入独立应用，不能宣称旧插件也已支持。
 - GitHub 发布目标为 remote `agents-chatroom` 的 `main`，即 https://github.com/mocias/agents-chatroom。本地分支名和默认 upstream 可能仍是 `master` / `origin`，不要据此误推旧仓库。提交、推送或发布须有用户授权；推送前 fetch 并检查远端分歧，不强推。
+- 后续计划见 `ROADMAP.md`，社区贡献与适配验收见 `CONTRIBUTING.md`、`docs/HARNESS_INTEGRATION.md`；候选清单不代表已接入，不能未验证就改 README 的已适配状态。外部贡献通过 Fork/PR，由维护者审核合并。
 
 ## 功能边界
 

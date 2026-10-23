@@ -62,6 +62,18 @@
 
 各 harness 需自行安装并登录，模型权限与用量由对应服务管理。WorkBuddy 模型列表读取桌面保存的在线目录快照，可点击“重新读取模型”同步；暂不包含自定义模型和套餐灰显提示。Agent Room 中的会话不保证同步显示在各 harness 的原生桌面任务列表中。
 
+### 后续接入与开放贡献
+
+欢迎外部开发者 Fork 并提交 PR，由维护者审核合并。新增 harness 的计划独立于上面的已适配清单，以下项目均尚未接入：
+
+| 批次 | 候选应用 |
+| --- | --- |
+| 优先验证 | OpenCode、Qwen Code、Kimi Code CLI、GitHub Copilot CLI |
+| 后续扩展 | CodeBuddy Code CLI、Cursor CLI、Goose、Mistral Vibe、Auggie、Factory Droid |
+| 条件调研 / 社区候选 | Gemini CLI、Google Antigravity CLI、Kiro CLI、OpenHands、Pi、Aider |
+
+完整依据、版本迁移提醒、优化优先级与认领方式见 [路线图](ROADMAP.md)。实现或测试适配前请读 [贡献指南](CONTRIBUTING.md) 和 [接入验收指南](docs/HARNESS_INTEGRATION.md)；可通过 [harness 提案](https://github.com/mocias/agents-chatroom/issues/new?template=harness_request.yml) 参与。GitHub 上的相似项目及可借鉴方向见 [项目调研](docs/SIMILAR_PROJECTS.md)。
+
 ### 桌面工作区登记（0.1.28）
 
 在 Agent 设置中点击“检查桌面登记”查看实际登记状态。工作区登记与 ACP 对话导入分开报告；检查不会重启任何应用。

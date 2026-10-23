@@ -160,3 +160,7 @@ Electron 44.7.2 / electron-builder 26.15.3，Windows x64 NSIS 安装向导。运
 - 已将真实 `D:/Agent Room` 从 0.1.28 更新至 0.1.31，并重新启动。`installed-update.json` 证明替换后首次启动前全部保护文件与目录不变，首次启动后已有聊天日志与工作区仍匹配；`installed-startup.json` 证明正式数据路径及 4 位 Agent、5 个会话可读，没有发送聊天。
 - 程序备份 `D:/Agent Room/.update-backup-0.1.28-a1d9a15d7f824b8aa24f68d55b070974`；完整数据/工作区备份 `output/release-0.1.31/user-backup/`。没有卸载、安装器流程或真实模型验收。
 - 完整安装包、0.1.28→0.1.31 增量与 SHA-256 位于 dist；仅源码、文档和演示图进入 GitHub，不创建 Release。
+
+## 路线图与社区贡献文档检查 · 2026-10-23
+
+本轮仅新增计划、贡献与接入说明、相似项目调研、Issue/PR 模板，运行代码/依赖/版本未变。`output/roadmap-2026-10-23/validation.json`：相对文件链接、Markdown 代码围栏、两份 Issue 表单及 config YAML/字段结构、16 项候选数量和 0.1.31 版本检查通过。调研基于上游官方文档和 GitHub 元数据，不是竞品或候选 harness 的运行验收。没有模型请求、打包、安装更新或权限变更；运行时测试未重复运行。
