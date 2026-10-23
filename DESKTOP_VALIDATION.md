@@ -174,3 +174,27 @@ Electron 44.7.2 / electron-builder 26.15.3，Windows x64 NSIS 安装向导。运
 - `output/release-0.1.32/artifact-audit.json`：最终 ASAR 的 48 个源文件与工作树匹配，无运行时私有数据；基线 0.1.31 增量在隔离副本实际重建 3 个目标文件，哈希及模拟数据/工作文件保留验证通过。
 
 完整安装包、0.1.31→0.1.32 增量和 SHA-256 位于 dist。未更新真实安装或推送 GitHub，未运行 NSIS 安装/卸载。记忆是本地历史检索与有界片段传递，未做真实模型召回质量验收；普通模型回复仍按实际输入（含记忆片段）计费。旧共享工作区保留并阻止生成，自动复制迁移和全局原生记忆隔离不在本轮完成范围。
+
+## 0.1.33 Codex / DSH Agent 多会话 · 2026-10-24
+
+- `output/tests-0.1.33.log`：128/128，通过新建空会话、独立历史/原生标识、工作区与记忆复用、推理隔离、重命名与置顶语义、未知 harness/名称拒绝、导航状态跨服务端口恢复。所有生成均为模拟后端。
+- `output/playwright/agent-sessions-pJnNFn/report.json`：Chrome + 实际本地 HTTP/SSE；展开/新建/切换、草稿和附件归属、标题/置顶、搜索、真实接口保存模拟目录中的推理值、通用界面回退、1440/1000/720/390px 和深浅主题通过。
+- `output/playwright/appearance-2qGwmR/report.json`：原有五主题、匿名投票边界、历史、提及、记忆查看与响应式检查通过。
+- `output/playwright/agent-sessions-bhzRBA/report.json`：最终 0.1.33 打包程序，验证新会话、选择状态与展开列表在退出重启后恢复，原日志与工作文件哈希不变；打包模式没有启动模型查询或发送生成请求。
+- `output/composer-ui-qUJ8Gv/report.json`：最终 EXE 工具栏、键盘、提及、重命名、长列表/历史独立滚动通过。
+- `output/packaged-memory-QZcIY7/report.json`：最终版本记忆回填、去重、身份、工作区分配与数据保留通过。
+- `output/release-0.1.33/artifact-audit.json`：48 个源码文件匹配，包内无用户聊天/工作区；0.1.31→0.1.33、0.1.32→0.1.33 增量均在隔离副本实际重建 3 个程序文件并保留模拟数据，SHA-256 通过。
+
+桌面随机端口下 localStorage 丢失选中状态的问题已复现并修复为数据目录 `ui-state.json` 持久化；同一窗口内的草稿/附件保留与跨重启导航恢复是不同保证。第一版仅路由 Codex / DSH 单聊布局，不导入原生桌面外部会话，不改变固定模型或现有执行权限。未替换真实安装、未验证真实模型回复或原生 session resume、未推送/发布 GitHub。安装包、两份增量及校验清单位于 dist。
+
+## 0.1.34 agentschat 微信风格界面 · 2026-10-24
+
+- `output/tests-0.1.34.log`：130/130，新增品牌与 DSH loader 一致性、旧/新卸载程序文件名升级保护；无真实模型调用。
+- `output/playwright/appearance-sjiTbl/report.json`：三栏布局、导航过滤、五主题、匿名投票/历史/提及/记忆、1440/1000/720/390px 通过。README 截图来自该目录的 `chat-light.png`，是隔离演示数据。
+- `output/playwright/agent-sessions-iMz70i/report.json`：新版 Codex / DSH 布局的多会话、草稿附件、模拟推理设置及深浅/窄屏通过。
+- `output/playwright/agent-sessions-g2u3db/report.json`：最终 EXE，agentschat 应用/菜单/页面名、既有数据位置、退出重启与会话状态恢复通过，旧文件 SHA-256 不变，无生成请求。
+- `output/composer-ui-dmQkE5/report.json`：打包输入栏/键盘/提及/重命名/独立滚动通过；最终只恢复包的内部身份，UI 源码与该检查一致。
+- `output/packaged-memory-tocik5/report.json`：最终 EXE 的共享记忆、旧历史回填、去重和数据保留通过。
+- `output/release-0.1.34/artifact-audit.json`：49 个文件与 ASAR 一致，productName/内部包名/版本/入口核对通过；从准确 0.1.31、0.1.32、0.1.33 各生成增量并实际应用到隔离副本，程序哈希和模拟数据保留通过。
+
+产品显示名与安装包使用 agentschat；内部 npm/DSH 注册标识、appId、程序文件名和数据定位保持兼容。精确增量沿用旧快捷方式，完整新安装使用 agentschat 快捷方式；未执行真实安装升级或 NSIS 安装/卸载。保留旧插件标识的合同检查不代表本轮真实加载旧 DSH 插件。未发布或重命名远端仓库。

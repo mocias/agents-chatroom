@@ -26,7 +26,13 @@ function createApplication(options = {}) {
   const workspaceRoot = path.resolve(options.workspaceRoot || process.env.AGENT_ROOM_WORKSPACE_ROOT || path.join(__dirname, '..', 'agents'));
   fs.mkdirSync(dataDir, { recursive: true });
   const catalogFile = path.join(dataDir, 'catalog.json');
+  const uiStateFile = path.join(dataDir, 'ui-state.json');
   let catalog = fs.existsSync(catalogFile) ? JSON.parse(fs.readFileSync(catalogFile, 'utf8')) : { version: 1, agents: [], conversations: [] };
+  // Older releases stored the Agent's pin on its sole direct conversation.
+  // Materialize it independently before any session pin can change that meaning.
+  catalog.agents = catalog.agents.map(agent => !['codex', 'dsh'].includes(agent.backend) || typeof agent.pinned === 'boolean' ? agent : {
+    ...agent, pinned: catalog.conversations.some(c => c.kind === 'direct' && c.agentIds[0] === agent.id && c.pinned),
+  });
   if (!fs.existsSync(catalogFile)) fs.writeFileSync(catalogFile, JSON.stringify(catalog, null, 2));
   const configFile = path.join(dataDir, 'backends.json');
   const config = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, 'utf8')) : {};
@@ -181,7 +187,7 @@ function createApplication(options = {}) {
         }
       }),
       afterNativeTurn: options.afterNativeTurn || (async (member, pool, thread) => {
-        if (member.backend === 'codex') await pool.request('thread/name/set', { threadId: thread.id, name: row.title + ' · ' + member.label });
+        if (member.backend === 'codex') await pool.request('thread/name/set', { threadId: thread.id, name: conversation(id).title + ' · ' + member.label });
       }),
       segmentMs: 1200, maxRelayHops: 2 });
     for (const record of room.log) api.attachments.rehydrate(record);
@@ -204,8 +210,12 @@ function createApplication(options = {}) {
       }
     });
     room.on('message', (record) => {
+      const current = conversation(id);
+      const automaticTitle = current.kind === 'direct' && current.titleSource === 'automatic' && record.kind === 'user'
+        ? String(record.text || record.attachments?.[0]?.name || '文件对话').replace(/\s+/g, ' ').trim().slice(0, 36) : null;
+      if (automaticTitle) room.title = automaticTitle;
       const next = { ...catalog, conversations: catalog.conversations.map((entry) => entry.id !== id ? entry : {
-        ...entry, updatedAt: record.ts, preview: record.pollId ? '投票：' + (polls.items.find(p => p.id === record.pollId)?.question || record.text).slice(0, 90) : record.text.slice(0, 100),
+        ...entry, ...(automaticTitle ? { title: automaticTitle, titleSource: 'generated' } : {}), updatedAt: record.ts, preview: record.pollId ? '投票：' + (polls.items.find(p => p.id === record.pollId)?.question || record.text).slice(0, 90) : record.text.slice(0, 100),
       }) };
       save(next);
       publish({ type: 'message', room: id, record: api._publicRecord(record) });
@@ -342,6 +352,21 @@ function createApplication(options = {}) {
         const agents = catalog.agents.map(agent => ({ ...agent, memory: memory.stats(agent.id), workspaceIssue: workspaceIssue(agent), desktopSync: (options.inspectDesktop || inspectDesktop)(agent, { dataDir, conversations: catalog.conversations }) || agent.desktopSync }));
         return sendJson(res, 200, { ...catalog, agents, discoveryChoice, canChooseWorkspace: Boolean(options.chooseWorkspaceDirectory), workspaceRoot, harnesses: discovery.publicRows(await discovery.scan()) });
       }
+      if (route === '/api/ui-state' && ['GET', 'POST'].includes(req.method)) {
+        let input = {};
+        if (req.method === 'POST') input = await readJsonBody(req);
+        else { try { input = JSON.parse(fs.readFileSync(uiStateFile, 'utf8')); } catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; } }
+        const agents = new Set(catalog.agents.map(a => a.id));
+        const selected = catalog.conversations.some(c => c.id === input?.selected) ? input.selected : null;
+        const expanded = Object.fromEntries(Object.entries(input?.expanded || {}).filter(([id, value]) => agents.has(id) && typeof value === 'boolean'));
+        const lastSessions = Object.fromEntries(Object.entries(input?.lastSessions || {}).filter(([id, value]) => agents.has(id) && catalog.conversations.some(c => c.id === value && c.kind === 'direct' && c.agentIds[0] === id)));
+        const view = { selected, expanded, lastSessions };
+        if (req.method === 'POST') {
+          fs.writeFileSync(uiStateFile + '.tmp', JSON.stringify(view, null, 2) + '\n');
+          fs.renameSync(uiStateFile + '.tmp', uiStateFile);
+        }
+        return sendJson(res, 200, view);
+      }
       if (req.method === 'GET' && route === '/api/agents/memory') {
         const agent = catalog.agents.find(entry => entry.id === url.searchParams.get('id'));
         if (!agent) throw Object.assign(new Error('Agent 不存在'), { status: 404 });
@@ -477,7 +502,7 @@ function createApplication(options = {}) {
           if (configuring) throw new Error('正在更新配置，请稍后');
           if (catalog.agents.some(a => a.label.toLowerCase() === label.toLowerCase())) throw new Error('Agent 名称已存在');
         }
-        const agent = { id: 'agent-' + randomUUID(), label, backend: body.backend,
+        const agent = { id: 'agent-' + randomUUID(), label, backend: body.backend, pinned: false,
           workspace: chooseWorkspace(workspaceRoot, body.backend, label, body.workspace, workspaceConstraints()),
           model: chosen?.id || String(body.model || '').trim().slice(0, 120) || null,
           modelLocked: Boolean(chosen), modelName: chosen ? [chosen.provider, chosen.name].filter(Boolean).join(' · ') : null,
@@ -489,6 +514,37 @@ function createApplication(options = {}) {
         agent.desktopSync = await syncAgent(agent);
         if (catalog.agents.some(a => a.id === agent.id)) { save({ ...catalog, agents: catalog.agents.map(a => a.id === agent.id ? agent : a) }); changed(); }
         return sendJson(res, 201, { agent, conversation: direct });
+      }
+      if (req.method === 'POST' && route === '/api/conversations') {
+        const body = await readJsonBody(req);
+        if (configuring || closing) throw new Error('应用正在更新或退出');
+        const agent = catalog.agents.find(a => a.id === body.agentId);
+        if (!agent || !['codex', 'dsh'].includes(agent.backend)) throw new Error('当前仅 Codex 和 DSH 支持多个单聊会话');
+        const title = String(body.title || '').trim();
+        if (title.length > 60 || /[\r\n]/.test(title)) throw new Error('会话名称不能超过 60 个字符或包含换行');
+        const row = { id: 'chat-' + randomUUID(), kind: 'direct', title: title || '新会话', titleSource: title ? 'custom' : 'automatic',
+          agentIds: [agent.id], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), preview: '开始新的对话' };
+        // A new index entry only. Native sessions are opened lazily on the first send.
+        save({ ...catalog, conversations: [...catalog.conversations, row] });
+        changed(); return sendJson(res, 201, { conversation: row });
+      }
+      if (req.method === 'POST' && route === '/api/conversation/title') {
+        const body = await readJsonBody(req), row = conversation(body.id);
+        const agent = catalog.agents.find(a => a.id === row.agentIds[0]);
+        if (row.kind !== 'direct' || !['codex', 'dsh'].includes(agent?.backend)) throw new Error('当前会话不支持单独命名');
+        const title = String(body.title || '').trim();
+        if (!title || title.length > 60 || /[\r\n]/.test(title)) throw new Error('请输入 1–60 个字符的会话名称，不能包含换行');
+        if (configuring || closing) throw new Error('应用正在更新或退出');
+        save({ ...catalog, conversations: catalog.conversations.map(c => c.id === row.id ? { ...c, title, titleSource: 'custom' } : c) });
+        if (runtimes.has(row.id)) runtimes.get(row.id).room.title = title;
+        changed(); return sendJson(res, 200, { ok: true });
+      }
+      if (req.method === 'POST' && route === '/api/agents/pin') {
+        const body = await readJsonBody(req);
+        if (!catalog.agents.some(a => a.id === body.id) || typeof body.pinned !== 'boolean') throw new Error('请选择有效的 Agent 和置顶状态');
+        if (configuring || closing) throw new Error('应用正在更新或退出');
+        save({ ...catalog, agents: catalog.agents.map(a => a.id === body.id ? { ...a, pinned: body.pinned } : a) });
+        changed(); return sendJson(res, 200, { ok: true });
       }
       if (req.method === 'POST' && route === '/api/conversation/rename') {
         const body = await readJsonBody(req); const row = conversation(body.id);
@@ -512,7 +568,7 @@ function createApplication(options = {}) {
             conversations: catalog.conversations.map(c => {
               let next = c;
               if (agent && c.agentIds.includes(agent.id)) next = { ...next, nativeSessions: {} };
-              if (c.id === row.id || (agent && c.kind === 'direct' && c.agentIds.includes(agent.id))) next = { ...next, title: name };
+              if ((!agent && c.id === row.id) || (agent && c.kind === 'direct' && c.agentIds.includes(agent.id) && !c.titleSource && c.title === agent.label)) next = { ...next, title: name };
               return next;
             }) });
           if (!agent && runtimes.has(row.id)) runtimes.get(row.id).room.title = name;
@@ -683,7 +739,7 @@ function createApplication(options = {}) {
       }
       if (req.method === 'GET') {
         if (route === '/favicon.ico') { res.writeHead(204); res.end(); return; }
-        const assets = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/app.css': ['app.css', 'text/css'] };
+        const assets = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/app.css': ['app.css', 'text/css'], '/chat-layout.css': ['chat-layout.css', 'text/css'] };
         const asset = assets[route];
         if (asset) {
           res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'");
@@ -721,7 +777,7 @@ if (require.main === module) {
   const dataLocation = createDataLocation(defaultDir, path.join(__dirname, '..', '.agent-room-location.json'));
   const app = createApplication({ dataDir: dataLocation.current, dataLocation });
   const port = Number(process.env.PORT || 4318);
-  app.server.listen(port, '127.0.0.1', () => console.log(`Agent Room: http://127.0.0.1:${port}\nData: ${app.dataDir}`));
+  app.server.listen(port, '127.0.0.1', () => console.log(`agentschat: http://127.0.0.1:${port}\nData: ${app.dataDir}`));
   app.server.on('error', (error) => { console.error(error.message); process.exitCode = 1; void app.close(); });
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { void app.close(); });
 }

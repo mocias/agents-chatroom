@@ -1,6 +1,6 @@
-# Agents Chatroom — Handoff
+# agentschat — Handoff
 
-交接更新：2026-10-23。当前源码版本 0.1.32；本轮实现 Agent 级共享记忆、严格工作区校验及记忆查看，已生成并验证安装包和 0.1.31→0.1.32 增量包，未替换真实安装。此前已将本机 `D:/Agent Room` 从 0.1.28 升级至 0.1.31。发布目标为 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom），不是 `origin/master`。优先阅读文末最新节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。保留包名 dsh-agent-room、原 MIT LICENSE 和插件入口。本文区分已实现、已验证和未完成事项。
+交接更新：2026-10-24。当前源码版本 0.1.34；项目改名 agentschat，界面采用微信风格三栏布局，验收和产物见文末最新节。0.1.33 的 Codex / DSH 多会话和独立输入布局继续保留。0.1.32 的 Agent 共享记忆和工作区隔离继续保留。此前已将本机 `D:/Agent Room` 从 0.1.28 升级至 0.1.31，本轮不替换真实安装。发布目标为 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom），不是 `origin/master`。优先阅读文末最新节及 AGENTS.md；前文各版本是历史记录，不能作为当前状态。产品显示名改为 agentschat；保留内部 npm 包名 dsh-agent-room、原 MIT LICENSE、旧安装/数据标识和插件入口兼容。本文区分已实现、已验证和未完成事项。
 
 0.1.8 更新：默认工作区改为桌面安装目录/agents/backend/Agent名称；浏览器默认源码根/agents，支持 AGENT_ROOM_WORKSPACE_ROOT；旧路径不迁移。添加删除操作，默认保留文件，删除文件需完整路径确认，禁止共用/嵌套工作区、磁盘根、应用数据祖先、符号链接/联接。删除联系人移除单聊入口与群成员，保留群聊记录、底层日志和原后端记录。安装包构建不等于用户已安装版本更新。
 
@@ -556,3 +556,53 @@ WorkBuddy 原生 CLI 默认角色仅列四档。实验表明 web-ui header + mod
 本次源码交付包含已验证的记忆实现、工作区校验、设置中的记忆查看、回归与打包验证脚本，以及对应文档。运行时实现与前节 126/126、浏览器和打包验证所对应源码一致；本次特点文案不改变运行行为。发布目标为 `agents-chatroom/main`，仓库简介同步突出 per-agent workspaces 与 Room-managed memory。此前“未推送 GitHub”的表述属于发布前阶段记录，发布状态以远端实际提交为准。
 
 仅提交源码、测试、脚本及文档；dist 安装包、增量包、output 验收材料、研究快照、聊天和 Agent 工作区均留在本地。本次不创建 GitHub Release，不替换本机安装，不调用真实模型。
+
+## 2026-10-24 0.1.33：Codex / DSH Agent 多会话与输入布局
+
+用户要求把每位 Agent 作为工作区入口，展开其历史会话并允许新增；随后明确第一版只做 Codex 和 DSH。已在独立应用实现：左侧 Agent 可展开/收起，会话列表支持新建、切换、重命名和置顶；首次消息自动生成新会话标题。旧单聊直接保留在所属 Agent 下，不搬动、重写历史或工作区。Agent 改名只同步旧默认标题，自定义/自动生成的会话标题不受影响；Agent 置顶与会话置顶分开。
+
+数据继续使用 `kind: direct`、`agentIds: [agent.id]` 与独立房间 ID。新增 `/api/conversations` 仅创建索引；首次发送才打开原生会话。同一 Agent 的工作区和 Room 记忆共享，各单聊拥有独立原生上下文、日志与推理覆盖。`/api/conversation/title` 仅改标题，旧 `/api/conversation/rename` 保持 Agent/群聊命名语义。创建会话不启动 harness；未同步或导入原生 Codex/DSH 桌面里的其他聊天。
+
+`composerAdapters` 按单聊 Agent.backend 路由：Codex 的工作区栏置于输入卡片底部，DSH 的工作区栏置于上方，模型/推理位于下方。复用文件/图片、提及、工具、发送和停止管线；点击模型或推理进入已有设置，模型仍固定到 Agent，推理选项经过真实后端目录校验。没有提供未接入的语音、插件或权限模式切换。群聊及其他 harness 使用原有通用布局。草稿与附件在当前窗口内按会话隔离，不承诺未发送内容跨重启保存。
+
+打包复测发现桌面每次随机端口会使 localStorage 无法恢复选中状态，已使用 `data/ui-state.json` 保存当前会话、展开状态、Agent 最近会话；`GET/POST /api/ui-state` 过滤不存在的 Agent/房间和跨 Agent 引用，原子写入。存储失败提示用户但不阻止读取历史。会话 ID 跨重启复用仍遵循原有 Room 恢复机制，没有新增原生 resume 保证。
+
+最终证据：
+
+- `output/tests-0.1.33.log`：128/128，通过新建/浏览不启动原生会话、Codex/DSH 独立会话标识与共同 cwd、共享记忆归属、设置隔离、标题/置顶独立、导航状态跨端口保存、重启原日志字节保留及非法输入拒绝。推理使用模拟后端。
+- `output/playwright/agent-sessions-pJnNFn/report.json`：真实 Chrome + 隔离 HTTP/SSE，草稿附件、搜索、创建/标题/置顶、有效推理设置、Codex/DSH 四种宽度与深浅主题通过。模型目录由 fixture 提供，无真实模型请求。
+- `output/playwright/appearance-2qGwmR/report.json`：原有外观、群聊/匿名投票、历史、提及、共享记忆与五主题回归通过。
+- `output/playwright/agent-sessions-bhzRBA/report.json`：最终 0.1.33 EXE，多个会话、布局、文件/草稿、重载与真实退出重启恢复通过；旧聊天日志和工作文件 SHA-256 不变，无生成请求。
+- `output/composer-ui-qUJ8Gv/report.json`：最终 EXE 输入栏、工具键盘操作、提及、重命名与独立滚动通过。
+- `output/packaged-memory-QZcIY7/report.json`：最终 EXE/ASAR，旧历史回填、跨会话记忆、去重、目录分配、原日志与工作文件保留通过，无真实模型请求。
+- `output/release-0.1.33/artifact-audit.json`：48 个源码文件逐字节匹配 ASAR，另核对 package 版本和桌面入口，无用户数据污染；从准确 0.1.32 打包基线和只读核实的本机 0.1.31 各构建一份增量。两份增量均实际应用到隔离副本，3 个程序文件 SHA-256 匹配，模拟聊天/工作区文件保持原哈希。
+
+产物：`dist/Agent-Room-Setup-0.1.33-x64.exe`（102755685 字节）、`dist/Agent-Room-Update-0.1.31-to-0.1.33-x64.zip`（349066 字节）、`dist/Agent-Room-Update-0.1.32-to-0.1.33-x64.zip`（228922 字节）、`dist/SHA256SUMS-0.1.33.txt`。增量包只适用对应精确基线；解压至安装目录外执行 Update.cmd。未替换用户真实安装、未运行 NSIS 安装/卸载、未请求真实模型、未提交或推送 GitHub。工作树中的源码和文档等待用户另行授权发布。
+
+## 2026-10-24 0.1.34：微信风格界面与 agentschat 品牌
+
+用户要求按所附微信截图调整 UI，并把项目名改为 agentschat。独立应用采用窄图标导航、紧凑会话列表、聊天区三栏结构；浅灰背景、绿色列表选中态、方形头像、绿色用户气泡与贴底输入区。导航实际连接全部聊天、Agents、群聊、历史搜索、后端管理和外观设置；均保留可访问名称。Codex / DSH 的工作区/模型/推理选项及会话展开、新建、切换、置顶保持可用，其他 harness 和群聊继续使用通用输入区。新增 `standalone/public/chat-layout.css` 作为主题感知的布局层，未修改现有私聊/匿名投票权限。
+
+显示名称统一为 agentschat：HTML 标题、侧栏、欢迎页、Electron 窗口/菜单/关于、package.productName、安装包、新安装快捷方式与卸载显示名称；更新应用图标颜色。保留原 MIT 归属和上游地址。README 使用 `docs/images/agentschat-messenger.png` 隔离演示截图，明确说明不是真实模型回复；旧用户截图原样保留在折叠历史示例中，用户本轮上传的微信参考图没有复制或打包。
+
+兼容边界：内部 npm 包名、DSH ModuleLoader 注册 ID、服务端导出名及 cordis patch specifier 必须一致，继续保留 `dsh-agent-room`，避免宿主丢弃客户端 bundle。产品显示名改为 agentschat，宿主集成身份保持兼容。保留 appId `com.mocias.agentroom`、程序文件名 `Agent Room.exe`、`%APPDATA%/Agent Room` 数据定位、环境变量、API/存储键、tab ID 和路由。旧快捷方式仍有效；增量升级不重写 Windows 快捷方式或卸载注册项文字。当前仓库目录与远端仓库名未改，开发验收阶段未推送 GitHub，后续交付见文末。
+
+增量脚本支持 `agentschat-Setup-*` 的卸载程序来源，并根据旧安装实际注册文件名更新 `Uninstall Agent Room.exe` 或 `Uninstall agentschat.exe`。仍保留路径白名单、精确旧哈希、备份、回滚和工作区保护；NSIS 的保留宏未放宽。产品改名不自动搬动或清空数据。
+
+最终验证：
+
+- `output/tests-0.1.34.log`：130/130，含真实执行客户端 bundle 注册入口并核对 package/patch/服务端身份一致，以及新旧卸载程序文件名的实际增量应用和数据保留。
+- `output/playwright/appearance-sjiTbl/report.json`：真实 Chrome + 隔离 HTTP/SSE；三栏相邻布局、agentschat 标题、导航过滤、五主题、匿名投票、历史/提及/记忆及四种宽度通过，无模型请求和浏览器异常。
+- `output/playwright/agent-sessions-iMz70i/report.json`：新版布局的 Codex / DSH 多会话、推理设置、草稿/附件、主题与窄屏通过，模拟后端。
+- `output/playwright/agent-sessions-g2u3db/report.json`：最终 0.1.34 EXE，核对 agentschat 窗口/应用/菜单名称、原数据定位、多会话、退出重启恢复以及旧日志和工作文件哈希不变；没有生成请求。
+- `output/composer-ui-dmQkE5/report.json`：同一最终 UI 源码的打包工具栏、键盘、提及、重命名与独立滚动通过。之后的最终包仅恢复内部 package identity 并新增 productName，界面源码未变；最终包另经上述多会话检查。
+- `output/packaged-memory-tocik5/report.json`：最终 EXE/ASAR，旧历史回填、共享记忆、重启去重和工作文件保留通过，无真实模型请求。
+- `output/release-0.1.34/artifact-audit.json`：49 个源文件与最终 ASAR 一致，核对 productName=agentschat、name=dsh-agent-room、版本及桌面入口，无用户数据污染；0.1.31/0.1.32/0.1.33 三份精确增量分别实际应用到隔离副本，3 个程序文件校验一致，模拟聊天/工作区哈希不变。
+
+产物：`dist/agentschat-Setup-0.1.34-x64.exe`（102758049 字节）、`dist/agentschat-Update-0.1.31-to-0.1.34-x64.zip`（388693 字节）、`dist/agentschat-Update-0.1.32-to-0.1.34-x64.zip`（388701 字节）、`dist/agentschat-Update-0.1.33-to-0.1.34-x64.zip`（388695 字节），校验见 `dist/SHA256SUMS-0.1.34.txt`。未替换真实安装、未执行 NSIS 安装/卸载、未调用真实模型；内部插件匹配检查不等于真实 DSH 插件加载验收。工作树包含此前未提交的 0.1.33 和本轮 0.1.34 变化。
+
+## 2026-10-24：0.1.34 GitHub 源码交付
+
+用户授权提交并推送当前实现至 `agents-chatroom/main`（https://github.com/mocias/agents-chatroom）。推送前获取远端 main 并核对本地基线一致；交付包含 0.1.33 多会话功能、0.1.34 agentschat 显示名称与微信风格界面、回归脚本、兼容升级逻辑、隔离演示截图及文档。运行代码沿用上述 130 项与最终打包验收对应版本，本次整理交付说明不改变运行行为。
+
+仅交付源码和仓库文档；安装包、增量包、测试输出、聊天记录、个人工作区、第三方依赖和用户微信参考截图不进入提交。不创建 GitHub Release，不更改远端仓库名称，不替换本机安装。前文“未推送”描述开发验收时状态，发布状态以远端 main 的提交记录为准。

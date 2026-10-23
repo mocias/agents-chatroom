@@ -56,6 +56,92 @@ async function until(fn) {
   throw new Error('Timed out');
 }
 
+test('Codex and DSH workspace sessions preserve identity, histories and independent settings across restart', async t => {
+  const turns = [], opened = [];
+  const factory = settings => {
+    const room = fakeFactory(turns)(settings);
+    for (const pool of room.pools.values()) {
+      pool.modelCapabilities = async () => new Map(settings.members.map(m => [m.model, { efforts: ['low', 'high'] }]));
+      const open = pool.openThread.bind(pool);
+      pool.openThread = async (id, config) => {
+        opened.push({ room: settings.id, agent: id, config });
+        const thread = await open(id, config); thread.id = settings.id + ':' + id; return thread;
+      };
+    }
+    return room;
+  };
+  const queryModels = async backend => ({ selected: backend + '-model', models: [{ id: backend + '-model', name: backend, efforts: ['low', 'high'], defaultEffort: 'low' }] });
+  const env = await start(t, { roomFactory: factory, queryModels });
+  const ids = [];
+  for (const backend of ['codex', 'dsh']) {
+    const initial = (await env.call('/agents', { label: backend + ' 伙伴', backend, model: backend + '-model' })).data;
+    const a = initial.agent;
+    const created = await Promise.all([env.call('/conversations', { agentId: a.id }), env.call('/conversations', { agentId: a.id, title: '保留标题' })]);
+    assert.ok(created.every(r => r.status === 201));
+    const [one, two] = created.map(r => r.data.conversation);
+    ids.push(one.id, two.id);
+    assert.notEqual(one.id, two.id);
+    assert.equal(turns.length, (ids.length - 2));
+    await env.call('/conversation?id=' + one.id); await env.call('/conversation?id=' + two.id);
+    assert.equal(opened.length, ids.length - 2, 'browsing and creating sessions must not start a native session');
+    assert.equal((await env.call('/member-effort', { room: one.id, agent: a.id, effort: 'high' })).status, 200);
+    assert.equal((await env.call('/member-effort', { room: two.id, agent: a.id, effort: 'invalid' })).status, 400);
+    const sent = await Promise.all([env.call('/say', { room: one.id, text: backend + ' 第一段独立上下文' }), env.call('/say', { room: two.id, text: backend + ' 第二段独立上下文' })]);
+    assert.ok(sent.every(r => r.status === 202), JSON.stringify(sent));
+    await until(async () => (await env.call('/conversation?id=' + two.id)).data.snapshot.log.some(r => r.kind === 'agent'));
+    await until(async () => !(await env.call('/conversation?id=' + one.id)).data.snapshot.busy.length);
+    const catalog = (await env.call('/catalog')).data;
+    const first = catalog.conversations.find(c => c.id === one.id), second = catalog.conversations.find(c => c.id === two.id);
+    assert.equal(first.title, backend + ' 第一段独立上下文');
+    assert.equal(second.title, '保留标题');
+    assert.equal(first.efforts[a.id], 'high'); assert.equal(second.efforts, undefined);
+    assert.notEqual(first.nativeSessions[a.id].id, second.nativeSessions[a.id].id);
+    assert.equal(first.nativeSessions[a.id].cwd, a.workspace); assert.equal(second.nativeSessions[a.id].cwd, a.workspace);
+    assert.equal((await env.call('/conversation/title', { id: one.id, title: '自己的标题 @ 保留' })).status, 200);
+    assert.equal((await env.call('/conversation/rename', { id: initial.conversation.id, name: backend + ' 新名字' })).status, 200);
+    const renamed = (await env.call('/catalog')).data;
+    assert.equal(renamed.conversations.find(c => c.id === one.id).title, '自己的标题 @ 保留');
+    assert.equal(renamed.conversations.find(c => c.id === two.id).title, '保留标题');
+    assert.equal(renamed.conversations.find(c => c.id === initial.conversation.id).title, backend + ' 新名字');
+    assert.equal(renamed.agents.find(v => v.id === a.id).workspace, a.workspace);
+    assert.equal(renamed.agents.find(v => v.id === a.id).model, a.model);
+    await env.call('/conversation/pin', { id: initial.conversation.id, pinned: true });
+    assert.equal((await env.call('/catalog')).data.agents.find(v => v.id === a.id).pinned, false, 'pinning a session must not pin its Agent');
+    const memory = (await env.call('/agents/memory?id=' + a.id)).data;
+    assert.ok(memory.entries.some(e => e.roomId === one.id)); assert.ok(memory.entries.some(e => e.roomId === two.id));
+    assert.equal((await env.call('/agents/pin', { id: a.id, pinned: true })).status, 200);
+  }
+  const logs = ids.map(id => fs.readFileSync(path.join(env.dataDir, 'rooms', id + '.log.jsonl'), 'utf8'));
+  const knownAgents = (await env.call('/catalog')).data.agents;
+  const navigation = { selected: ids[0], expanded: { [knownAgents[0].id]: true, [knownAgents[1].id]: false }, lastSessions: { [knownAgents[0].id]: ids[0] } };
+  const saved = await env.call('/ui-state', { ...navigation, expanded: { ...navigation.expanded, missing: true }, lastSessions: { ...navigation.lastSessions, [knownAgents[1].id]: ids[0] } });
+  assert.deepEqual(saved.data, navigation, 'navigation rejects unknown agents and cross-Agent session pointers');
+  await env.app.close();
+  const restart = await start(t, { dataDir: env.dataDir, roomFactory: factory, queryModels });
+  assert.deepEqual((await restart.call('/ui-state')).data, navigation, 'navigation survives a new server port');
+  const restored = (await restart.call('/catalog')).data;
+  assert.equal(restored.agents.length, 2); assert.equal(restored.conversations.length, 6);
+  assert.ok(restored.agents.every(a => a.pinned));
+  for (const [i, id] of ids.entries()) {
+    const history = (await restart.call('/conversation?id=' + id)).data.snapshot.log;
+    assert.ok(history.some(r => r.kind === 'user')); assert.equal(history.filter(r => r.kind === 'user').length, 1);
+    assert.equal(fs.readFileSync(path.join(env.dataDir, 'rooms', id + '.log.jsonl'), 'utf8'), logs[i]);
+  }
+  assert.equal(turns.length, 4);
+});
+
+test('workspace session endpoints reject unsupported agents and invalid titles without changing the catalog', async t => {
+  const env = await start(t, { roomFactory: fakeFactory([]) });
+  const qoder = (await env.call('/agents', { backend: 'qoder', label: 'Qoder' })).data;
+  const codex = (await env.call('/agents', { backend: 'codex', label: 'Codex' })).data;
+  const before = fs.readFileSync(path.join(env.dataDir, 'catalog.json'), 'utf8');
+  for (const agentId of ['missing', qoder.agent.id]) assert.equal((await env.call('/conversations', { agentId })).status, 400);
+  assert.equal((await env.call('/conversations', { agentId: codex.agent.id, title: 'a'.repeat(61) })).status, 400);
+  assert.equal((await env.call('/conversation/title', { id: codex.conversation.id, title: 'bad\nname' })).status, 400);
+  assert.equal((await env.call('/conversation/title', { id: qoder.conversation.id, title: 'no' })).status, 400);
+  assert.equal(fs.readFileSync(path.join(env.dataDir, 'catalog.json'), 'utf8'), before);
+});
+
 test('a slow member does not lock sending; follow-ups steer it and other members can answer', async t => {
   let room, finish;
   const captured = [], steered = [];

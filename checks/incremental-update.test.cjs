@@ -17,3 +17,19 @@ test('binary delta reconstructs, truncates and adds files without touching user 
  run();assert.deepEqual(fs.readFileSync(path.join(base,'Agent Room.exe')),updated);assert.equal(fs.readFileSync(path.join(base,'resources','app.asar'),'utf8'),'new');assert.equal(fs.readFileSync(path.join(base,'extra.dll'),'utf8'),'added');assert.equal(fs.readFileSync(path.join(base,'my data','keep.txt'),'utf8'),'untouched');
  assert.ok(fs.readdirSync(base).some(name=>name.startsWith('.update-backup-')));
 });
+
+test('agentschat rebrand updates the registered legacy or new uninstaller without touching data', {skip:process.platform!=='win32'},()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'agentschat-rename-'));
+ const next=path.join(root,'next');fs.mkdirSync(next);
+ fs.writeFileSync(path.join(next,'Agent Room.exe'),'new executable');
+ fs.writeFileSync(path.join(root,'agentschat-Setup-0.1.34-x64.__uninstaller.exe.incremental'),'new safe uninstaller');
+ for(const name of ['Uninstall Agent Room.exe','Uninstall agentschat.exe']){
+  const base=path.join(root,name.includes('agentschat')?'renamed':'legacy'),out=base+'-patch';fs.mkdirSync(base);
+  fs.writeFileSync(path.join(base,'Agent Room.exe'),'old executable');fs.writeFileSync(path.join(base,name),'old uninstaller');
+  fs.mkdirSync(path.join(base,'agents'));fs.writeFileSync(path.join(base,'agents','keep.txt'),'keep workspace');
+  const result=build(base,next,out,'0.1.33','0.1.34');assert.ok(result.manifest.files.some(f=>f.path===name&&f.oldHash));
+  execFileSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(out,'Apply-Update.ps1'),'-InstallDir',base,'-NoLaunch'],{windowsHide:true,timeout:60000,stdio:'pipe'});
+  assert.equal(fs.readFileSync(path.join(base,name),'utf8'),'new safe uninstaller');
+  assert.equal(fs.readFileSync(path.join(base,'agents','keep.txt'),'utf8'),'keep workspace');
+ }
+});

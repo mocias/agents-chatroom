@@ -301,3 +301,89 @@ dialog .hint { font-size: 12px; }
 #memory-entries { max-height: 48vh; overflow-y: auto; overflow-x: hidden; }
 .memory-entry { padding: 12px 0; border-bottom: 1px solid var(--ar-line); overflow-wrap: anywhere; }
 .memory-entry p { margin: 4px 0; white-space: pre-wrap; }
+
+/* Agent workspaces own independent, expandable conversation lists. */
+.agent-workspace { margin: 3px 0 9px; border-radius: 12px; }
+.agent-workspace-heading { display: flex; align-items: center; min-width: 0; gap: 2px; }
+.agent-entry.conversation { flex: 1; min-width: 0; margin: 0; padding: 10px 4px; border: 0; background: transparent; }
+.agent-entry .avatar { width: 32px; height: 32px; border-radius: 10px; }
+.agent-entry .conversation-top strong { font-size: 13px; }
+.agent-entry .conversation-preview { margin-top: 4px; font-size: 10px; }
+.agent-disclosure, .agent-add-session, .session-more { flex-shrink: 0; padding: 0; width: 23px; height: 30px; background: transparent; border: 0; color: var(--ar-dim); }
+.agent-disclosure { font-size: 20px; }
+.agent-add-session { font-size: 18px; }
+.agent-workspace-heading:hover, .selected-workspace .agent-workspace-heading { background: var(--room-soft); border-radius: 10px; }
+.agent-sessions { margin: 1px 6px 6px 29px; padding: 3px 0 2px 9px; border-left: 1px solid var(--ar-line); }
+.session-item { display: flex; align-items: center; min-width: 0; margin: 2px 0; border-radius: 8px; }
+.session-item:has(.active) { background: var(--room-selected); }
+.session-item:hover { background: var(--room-soft); }
+.session-link { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 9px 4px; border: 0; text-align: left; font-size: 12px; background: transparent; }
+.session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-symbol { width: 12px; flex-shrink: 0; color: var(--ar-dim); text-align: center; }
+.session-link.active { color: var(--green); font-weight: 600; }
+.session-more { font-size: 17px; width: 24px; }
+.new-session-link { display: block; padding: 9px 8px; border: 0; background: transparent; color: var(--ar-dim); font-size: 11px; }
+.empty-sessions { font-size: 11px; color: var(--ar-dim); padding-left: 8px; }
+.agent-workspace .unread { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+/* Harness adapters reuse the message/attachment pipeline and native controls. */
+.composer[data-harness="codex"], .composer[data-harness="dsh"] {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto; gap: 4px 8px;
+  width: calc(100% - 48px); max-width: 1100px; margin: 0 auto 24px; padding: 12px 16px 0;
+  border-radius: 23px; max-height: 60dvh;
+}
+.composer[data-harness="codex"] { grid-template-areas: "draft draft draft" "attachments attachments attachments" "tools options send" "context context context"; }
+.composer[data-harness="dsh"] { grid-template-areas: "context context context" "draft draft draft" "attachments attachments attachments" "tools options send"; padding-bottom: 12px; --composer-accent: #749be2; }
+.composer[data-harness="dsh"]:focus-within { border-color: color-mix(in srgb, var(--composer-accent) 60%, var(--ar-line)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--composer-accent) 9%, transparent); }
+.composer:not([data-harness="generic"]) #draft { grid-area: draft; min-height: 100px; max-height: 20dvh; margin: 0; width: 100%; padding: 10px 3px; resize: vertical; }
+.composer:not([data-harness="generic"]) .attachments { grid-area: attachments; }
+.composer:not([data-harness="generic"]) .composer-tools { grid-area: tools; padding: 0; border: 0; align-self: center; flex-wrap: wrap; }
+.composer:not([data-harness="generic"]) footer { grid-area: send; margin: 0; padding: 0; align-self: center; }
+.composer:not([data-harness="generic"]) footer > span { display: none; }
+.composer:not([data-harness="generic"]) #send { min-width: 44px; padding: 10px 13px; border-radius: 20px; }
+.composer[data-harness="dsh"] #send { background: color-mix(in srgb, var(--composer-accent) 75%, var(--ar-text)); color: var(--ar-panel); }
+#harness-context { grid-area: context; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 7px 0; }
+.composer[data-harness="codex"] #harness-context { margin: 6px -16px 0; padding: 10px 18px; background: var(--room-soft); border-top: 1px solid var(--ar-line); border-radius: 0 0 23px 23px; }
+.composer[data-harness="dsh"] #harness-context { border-bottom: 1px solid var(--ar-line); margin-bottom: 3px; }
+#harness-options { grid-area: options; display: flex; align-items: center; gap: 3px; min-width: 0; max-width: 390px; justify-content: flex-end; }
+.composer-chip { border: 0; padding: 7px 8px; min-width: 0; border-radius: 8px; background: transparent; font-size: 12px; color: var(--ar-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#composer-workspace { color: var(--ar-text); max-width: 65%; }
+#composer-model { max-width: 265px; }
+#composer-effort { flex-shrink: 0; }
+#composer-mode { font-size: 11px; }
+.harness-welcome { display: flex; flex-direction: column; align-items: center; gap: 15px; padding: 60px 12px; }
+.harness-welcome .avatar { width: 54px; height: 54px; font-size: 24px; border-radius: 18px; }
+.harness-welcome .eyebrow { margin: 3px 0 0; color: var(--ar-dim); font-size: 11px; letter-spacing: 1px; }
+.harness-welcome strong { color: var(--ar-text); font-size: clamp(20px, 2.5vw, 32px); font-weight: 550; }
+.harness-welcome p { margin: 0; font-size: 13px; line-height: 1.8; }
+@media (max-width: 1150px) {
+  .composer[data-harness="codex"] { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "draft draft" "attachments attachments" "options options" "tools send" "context context"; }
+  .composer[data-harness="dsh"] { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "context context" "draft draft" "attachments attachments" "options options" "tools send"; }
+  #harness-options { max-width: 100%; justify-content: flex-end; }
+  #composer-model { max-width: 75%; }
+  .header-actions { flex-wrap: wrap; justify-content: flex-end; }
+}
+@media (max-width: 760px) {
+  .composer[data-harness="codex"], .composer[data-harness="dsh"] { width: calc(100% - 20px); padding: 9px 10px; margin-bottom: 10px; gap: 3px; border-radius: 15px; }
+  .composer[data-harness="codex"] #harness-context { margin: 5px -10px -9px; padding: 7px 10px; border-radius: 0 0 15px 15px; }
+  .composer-chip { font-size: 10px; padding: 6px 3px; }
+  .composer:not([data-harness="generic"]) #draft { min-height: 75px; font-size: 13px; }
+  .composer:not([data-harness="generic"]) #send { font-size: 11px; padding: 8px; min-width: 36px; }
+  #harness-context { gap: 4px; flex-wrap: wrap; }
+  #composer-workspace { max-width: 100%; }
+  .harness-welcome { gap: 10px; padding: 30px 6px; }
+  .harness-welcome p { font-size: 11px; }
+}
+@media (max-width: 520px) {
+  .agent-entry .avatar { display: none; }
+  .agent-entry.conversation { padding: 8px 0; }
+  .agent-entry .conversation-top strong { font-size: 11px; }
+  .agent-entry .conversation-preview { flex-wrap: wrap; gap: 3px; }
+  .agent-disclosure, .agent-add-session { width: 18px; }
+  .agent-sessions { margin-left: 12px; margin-right: 0; padding-left: 4px; }
+  .session-link { gap: 2px; font-size: 10px; padding: 8px 0; }
+  .session-more { width: 20px; }
+  .new-session-link { font-size: 10px; padding-left: 3px; }
+  #new-session { font-size: 10px; padding: 4px; }
+  #composer-model { max-width: 65%; }
+}

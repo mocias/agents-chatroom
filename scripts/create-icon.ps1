@@ -4,7 +4,7 @@ $assetDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../desktop/a
 $bitmap = New-Object System.Drawing.Bitmap 256,256
 $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
 $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-$green = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml('#198565'))
+$green = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml('#07ad69'))
 $white = [System.Drawing.Brushes]::White
 $shape = New-Object System.Drawing.Drawing2D.GraphicsPath
 $shape.AddArc(4,4,64,64,180,90)

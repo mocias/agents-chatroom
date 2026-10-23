@@ -1,7 +1,8 @@
 'use strict';
 module.exports = {
   appId: 'com.mocias.agentroom',
-  productName: 'Agent Room',
+  productName: 'agentschat',
+  // Preserve the binary basename so existing shortcuts and exact-base patches keep working.
   executableName: 'Agent Room',
   directories: { output: 'dist', buildResources: 'desktop/assets' },
   extraMetadata: { main: 'desktop/main.cjs' },
@@ -20,12 +21,12 @@ module.exports = {
     allowToChangeInstallationDirectory: true,
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
-    shortcutName: 'Agent Room',
-    uninstallDisplayName: 'Agent Room',
+    shortcutName: 'agentschat',
+    uninstallDisplayName: 'agentschat',
     deleteAppDataOnUninstall: false,
     runAfterFinish: true,
     installerLanguages: ['zh_CN', 'en_US'],
     language: '2052',
-    artifactName: 'Agent-Room-Setup-${version}-${arch}.${ext}',
+    artifactName: 'agentschat-Setup-${version}-${arch}.${ext}',
   },
 };

@@ -31,7 +31,7 @@ const { PollStore } = require('../lib/polls.cjs');
   fs.writeFileSync(path.join(data, 'discovery-consent.json'), JSON.stringify({ choice: 'manual' }));
   const records = [
     { kind: 'system', text: '欢迎来到灵感工作室 · 让好想法发生' },
-    { kind: 'user', authorId: 'user', authorLabel: '你', text: '一起想想，怎样让 Agent Room 更舒服、更适合每天使用？' },
+    { kind: 'user', authorId: 'user', authorLabel: '你', text: '一起想想，怎样让 agentschat 更舒服、更适合每天使用？' },
     { kind: 'agent', authorId: 'designer', authorLabel: '设计伙伴', text: '先从一个安静、清晰的空间开始。给对话多一点留白，用柔和的绿色标记当前的关注点。' },
     { kind: 'agent', authorId: 'researcher', authorLabel: '研究员', text: '我来整理需求和参考。统一文字层级，让长时间阅读也能保持轻松。' },
     { kind: 'agent', authorId: 'reviewer', authorLabel: '代码审查员', text: '我负责检查实现：深浅主题、窄窗口和键盘操作，都要保持一致。' },
@@ -61,6 +61,16 @@ const { PollStore } = require('../lib/polls.cjs');
     page.on('pageerror', e => errors.push(e.message));
     await page.goto(url);
     await page.locator('[data-room="studio"]').waitFor();
+    assert.equal(await page.title(), 'agentschat');
+    await page.locator('.app-rail [data-filter="direct"]').click();
+    assert.equal(await page.locator('[data-room="studio"]').count(), 0);
+    assert.equal(await page.locator('[data-open-agent="designer"]').count(), 1);
+    assert.equal(await page.locator('.app-rail [data-filter="direct"]').getAttribute('aria-pressed'), 'true');
+    await page.locator('.app-rail [data-filter="group"]').click();
+    assert.equal(await page.locator('[data-open-agent]').count(), 0);
+    assert.equal(await page.locator('[data-room="studio"]').count(), 1);
+    await page.locator('.app-rail [data-filter="all"]').click();
+    checks.push('agentschat title and functional chat/Agent/group rail filters');
     await page.screenshot({ path: path.join(home, 'welcome-light.png') });
     await page.locator('[data-room="studio"]').click();
     await page.locator('.private-message').waitFor();
@@ -71,6 +81,12 @@ const { PollStore } = require('../lib/polls.cjs');
     assert.match(await page.locator('#chat-subtitle').textContent(), /Codex.*DSH.*Qoder.*Claude Code.*WorkBuddy AI/);
     checks.push('Harness identity visible in Agent list, group subtitle and message bylines');
     await page.locator('#messages').evaluate(el => { el.scrollTop = 0; });
+    assert.ok(await page.evaluate(() => {
+      const rail = document.querySelector('.app-rail').getBoundingClientRect();
+      const list = document.querySelector('.sidebar').getBoundingClientRect();
+      const chat = document.querySelector('.chat').getBoundingClientRect();
+      return rail.right === list.left && list.right === chat.left && rail.width <= 60;
+    }));
     await page.screenshot({ path: path.join(home, 'chat-light.png') });
     await page.locator('#draft').fill('保留这段草稿');
     await page.locator('#tools-toggle').click();

@@ -1,4 +1,4 @@
-# Agent Room 路线图
+# agentschat 路线图
 
 更新：2026-10-23。当前源码为 0.1.32；本页包含已完成的记忆基础版与后续计划，不表示新 harness 已接入，也不承诺发布日期。欢迎通过 [Issue](https://github.com/mocias/agents-chatroom/issues) 认领研究、实现或实测，并提交 PR；维护者依据 [贡献指南](CONTRIBUTING.md) 审核合并。
 

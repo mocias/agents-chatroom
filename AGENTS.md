@@ -1,6 +1,9 @@
-# Agent Room 开发与交付约定
+# agentschat 开发与交付约定
 
 ## 当前入口
+
+- 0.1.34 起项目/桌面显示名为 `agentschat`，package.productName 与 builder.productName 对齐。DSH 内部 npm 包名、客户端注册 ID、服务端导出名与 patch specifier 保持 `dsh-agent-room` 一致。为兼容既有升级，保留 appId `com.mocias.agentroom`、`Agent Room.exe`、`%APPDATA%/Agent Room`、环境变量/API/存储键及插件路由。不得因改名直接迁移用户目录。新安装包为 `agentschat-Setup-*`；增量更新新旧卸载程序时保持原注册的目标文件名。远端仓库名与本地目录未改。
+- 独立 UI 的三栏布局位于 `standalone/public/chat-layout.css`，在原 app.css 后加载；所有颜色跟随主题变量。导航按钮必须有实际入口与可访问名称，保留 Codex/DSH 的会话与输入选项。
 
 - 先读 `HANDOFF.md` 的最新版本节、`README.md` 和 `DESKTOP_VALIDATION.md`。版本以 `package.json` 为准，历史验收数字不能当成当前检查结果。
 - 主产品是 `desktop/main.cjs`、`standalone/` 与 `lib/room.cjs`；`lib/index.js` 和 `public/` 是旧 DSH 插件入口。投票目前接入独立应用，不能宣称旧插件也已支持。
@@ -10,6 +13,8 @@
 ## 功能边界
 
 - 每个 Agent 使用稳定工作区，每个群聊有独立原生会话；不得用共同会话代替隔离。尊重用户选择的模型，不能静默换模型。
+- 0.1.33 起 Codex / DSH 支持一个 Agent 下多个 direct 会话，历史与原生上下文按房间隔离，工作区与记忆仍按 Agent 共享。`POST /api/conversations` 只建索引，`/conversation/title` 只改会话标题；旧 `/conversation/rename` 仍用于 Agent / 群聊改名，不可覆盖已有会话自定标题。Agent 与会话置顶分开保存，旧单聊置顶只作为 Agent 初始状态兼容。
+- 前端 `composerAdapters` 按 direct 会话所属 Agent.backend 路由 Codex / DSH 布局；群聊与其他 harness 走通用布局。不把原生桌面 UI 截图中的未接入能力做成可用按钮；模型继续固定，推理设置经真实后端目录验证。
 - 长期 memory 按稳定的 Agent ID 隔离，不能按 harness 或群聊划分归属。同一 Agent 在单聊和各群聊中有权接收的内容，默认进入该 Agent 的同一份共享记忆，并可跨会话检索；即使使用相同 harness，不同 Agent 也不共用 memory。
 - 群聊独立的原生会话负责当前上下文、消息路由与运行状态，不切断该 Agent 的长期记忆。0.1.32 的 Room 记忆实现位于 `lib/agent-memory.cjs`，由独立宿主共享实例自动写入，并在每轮向原生会话提供本地检索片段；不发起摘要/embedding 模型请求。记忆保留来源房间、消息与可见范围，沿用私聊和匿名投票的输出边界；不能把共享工作区或原生恢复等同于 Room 记忆服务。
 - 新建/修改工作区必须检查不同 Agent 的重复、嵌套和链接别名。旧共享目录不自动搬动或删除；保留路径与文件，提示冲突并阻止相关 Agent 创建/使用原生会话，待用户选定独立目录。不得通过复制账号配置或放宽工具权限实现隔离。
@@ -30,6 +35,7 @@
 
 - 基础回归 `npm test`；按改动运行相关真实 UI 或后端检查。真实模型检查使用隔离数据，会消耗用户额度；不得把 fixture 测试当成真实回复验证。
 - 外观改动运行 `node scripts/check-ui-appearance.cjs`：使用本机 Chrome 与隔离 HTTP/SSE 服务，不调用模型或扫描安装；截图及报告写入 `output/playwright/appearance-*/`。同时保留现有输入栏、键盘和滚动回归。深浅色应跟随保存的背景色，新增颜色使用主题变量，不写死浅色控件。
+- 多会话验收 `node scripts/check-agent-sessions-ui.cjs`：隔离 HTTP/SSE、草稿附件切换、会话命名/置顶、模型推理界面、四种宽度和深浅主题。`UI_PACKAGED=1` 使用最终 EXE 并检查重启保留；打包模式不保存模拟推理选项，不启动真实后端。截图为隔离演示消息，不能冒充真实模型回复。
 - README 界面示例默认使用隔离演示数据，保留 harness 名称可见，并注明演示消息不是真实模型回复；用户明确指定上传的截图可按其要求使用，并据实更新图片说明。示例图片位于 `docs/images/`；未经用户授权不得上传真实聊天截图，不得把整个 `output/` 纳入提交。
 - 投票回归 `node --test checks/polls.test.cjs`；显式真实检查 `node scripts/check-live-polls.cjs codex,dsh`，其他可用组合见 DESKTOP_VALIDATION.md。
 - 记忆/目录回归 `node --test checks/agent-memory.test.cjs checks/workspaces.test.cjs`，使用临时数据和模拟 CLI，不消费真实模型额度。打包后运行 `node scripts/check-packaged-memory.cjs`，核对 ASAR、旧历史回填、重启去重与原文件校验；它不替换真实安装。

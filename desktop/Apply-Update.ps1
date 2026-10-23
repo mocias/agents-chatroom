@@ -1,6 +1,6 @@
 param([string]$InstallDir, [switch]$NoLaunch)
 $ErrorActionPreference = 'Stop'
-if (!$InstallDir) { $InstallDir = Read-Host 'Agent Room installation directory (e.g. D:\Agent Room)' }
+if (!$InstallDir) { $InstallDir = Read-Host 'agentschat installation directory (also accepts the existing Agent Room directory)' }
 $root = (Resolve-Path -LiteralPath $InstallDir).Path.TrimEnd('\')
 $manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'manifest.json') -Raw | ConvertFrom-Json
 if ($manifest.format -ne 1 -or !$manifest.files.Count) { throw 'Invalid or empty update manifest' }
@@ -10,7 +10,7 @@ function Get-Hash([string]$file) {
   finally { $inputFile.Dispose(); $algorithm.Dispose() }
 }
 function Target([string]$relative) {
-  if ($relative -notmatch '^(Agent Room\.exe|Uninstall Agent Room\.exe|version|LICENSE[^/\\]*|[^/\\]+\.(dll|pak|bin|dat|json)|resources/(app\.asar|default_app\.asar|elevate\.exe|app-update\.yml)|locales/[^/\\]+\.pak)$' -or $relative.Contains('..')) { throw "Invalid application path: $relative" }
+  if ($relative -notmatch '^(Agent Room\.exe|Uninstall (Agent Room|agentschat)\.exe|version|LICENSE[^/\\]*|[^/\\]+\.(dll|pak|bin|dat|json)|resources/(app\.asar|default_app\.asar|elevate\.exe|app-update\.yml)|locales/[^/\\]+\.pak)$' -or $relative.Contains('..')) { throw "Invalid application path: $relative" }
   $result = [IO.Path]::GetFullPath((Join-Path $root $relative))
   if (!$result.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Path escaped installation' }
   $cursor = $result
@@ -57,7 +57,7 @@ try {
 $exe = Join-Path $root 'Agent Room.exe'
 $running = @(Get-Process -Name 'Agent Room' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe })
 foreach ($process in $running) { if ($process.MainWindowHandle -ne 0) { $null = $process.CloseMainWindow() } }
-foreach ($process in $running) { if (!$process.WaitForExit(30000)) { throw 'Close Agent Room before applying the update. No files changed.' } }
+foreach ($process in $running) { if (!$process.WaitForExit(30000)) { throw 'Close agentschat / Agent Room before applying the update. No files changed.' } }
 # Recheck after shutdown, then back up all originals. Never uninstall or remove data directories.
 foreach ($file in $manifest.files) {
   $target = Target $file.path

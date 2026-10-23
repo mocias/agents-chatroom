@@ -2,6 +2,23 @@
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const state = { agents: [], conversations: [], harnesses: [], current: null, snapshot: null, filter: 'all', drafts: {}, uploads: {}, pending: new Set(), unread: new Set(), live: new Map(), loading: 0 };
+function savedObject(key) { try { return JSON.parse(localStorage.getItem(key)) || {}; } catch { return {}; } }
+const expandedAgents = savedObject('agent-room:expanded-agents');
+const lastAgentSessions = savedObject('agent-room:last-agent-sessions');
+const composerAdapters = {
+  codex: { placeholder: '你想和这位 Agent 一起做什么？', mode: '只读对话', heading: '我们要做什么？' },
+  dsh: { placeholder: '描述你的想法，或引用文件开始对话…', mode: '标准对话', heading: '探索未尽之境' },
+};
+function supportsSessions(agent) { return Boolean(composerAdapters[agent?.backend]); }
+function agentSessions(id) { return state.conversations.filter(c => c.kind === 'direct' && c.agentIds[0] === id).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt.localeCompare(a.updatedAt)); }
+function agentPinned(agent) { return agent.pinned ?? agentSessions(agent.id).some(c => c.pinned && !c.titleSource && c.title === agent.label); }
+function expandAgent(id, expanded = true) { expandedAgents[id] = expanded; localStorage.setItem('agent-room:expanded-agents', JSON.stringify(expandedAgents)); }
+let navigationSave = Promise.resolve();
+function persistNavigation() {
+  const view = { selected: state.current, expanded: { ...expandedAgents }, lastSessions: { ...lastAgentSessions } };
+  navigationSave = navigationSave.catch(() => {}).then(() => api('/ui-state', view));
+  return navigationSave;
+}
 let onSubmit = null;
 let toastTimer;
 async function api(route, body, method = 'POST') {
@@ -21,9 +38,58 @@ function harnessBadge(agent) {
 function time(ts) { return ts ? new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''; }
 function renderList() {
   const query = $('#search').value.trim().toLowerCase();
-  const rows = state.conversations.filter((row) => (state.filter === 'all' || row.kind === state.filter) && (row.title.toLowerCase().includes(query) || row.agentIds.some((id) => { const agent = state.agents.find(a => a.id === id); return agent && (agent.label + ' ' + harnessLabel(agent.backend)).toLowerCase().includes(query); }))).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt.localeCompare(a.updatedAt));
-  $('#conversations').innerHTML = rows.length ? rows.map((row) => `<button class="conversation ${row.id === state.current ? 'active' : ''}" data-room="${row.id}" aria-current="${row.id === state.current}">${avatar(state.agents.find((a) => a.id === row.agentIds[0]), row.kind === 'group')}<div class="conversation-info"><div class="conversation-top"><strong>${row.pinned ? '<span class="pin-mark" aria-label="已置顶">⌃ </span>' : ''}${escapeHtml(row.title)}</strong><time>${time(row.updatedAt)}</time>${state.unread.has(row.id) ? '<i class="unread"></i>' : ''}</div><p class="conversation-preview">${row.kind === 'direct' ? harnessBadge(state.agents.find(a => a.id === row.agentIds[0])) : ''}<span>${escapeHtml(row.preview || '开始聊天吧')}</span></p></div></button>`).join('') : '<p class="empty-list">' + (query ? '没有找到匹配的会话' : state.filter === 'group' ? '还没有群聊<br>选择几位伙伴，一起聊聊' : '点击搜索框旁的 ＋<br>添加你的第一位 AI 伙伴') + '</p>';
+  const matches = row => (row.title + ' ' + (row.preview || '')).toLowerCase().includes(query) || row.agentIds.some(id => { const a = state.agents.find(a => a.id === id); return a && (a.label + ' ' + harnessLabel(a.backend)).toLowerCase().includes(query); });
+  const rows = state.conversations.filter(row => (state.filter === 'all' || row.kind === state.filter) && matches(row));
+  const entries = rows.filter(row => row.kind !== 'direct' || !supportsSessions(state.agents.find(a => a.id === row.agentIds[0]))).map(row => ({ row, pinned: row.pinned, updatedAt: row.updatedAt }));
+  if (state.filter !== 'group') for (const agent of state.agents.filter(supportsSessions)) {
+    const sessions = agentSessions(agent.id), matching = sessions.filter(matches);
+    if (!matching.length && query && !(agent.label + ' ' + harnessLabel(agent.backend)).toLowerCase().includes(query)) continue;
+    entries.push({ agent, sessions: query ? matching : sessions, pinned: agentPinned(agent), updatedAt: sessions.reduce((at, c) => c.updatedAt > at ? c.updatedAt : at, agent.createdAt || '') });
+  }
+  entries.sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt.localeCompare(a.updatedAt));
+  $('#conversations').innerHTML = entries.length ? entries.map(({ row, agent, sessions, pinned }) => {
+    if (agent) {
+      const all = agentSessions(agent.id);
+      const selected = all.find(c => c.id === state.current);
+      const recent = all.find(c => c.id === lastAgentSessions[agent.id]) || all[0];
+      const expanded = Boolean(query) || expandedAgents[agent.id] === true;
+      return `<section class="agent-workspace ${selected ? 'selected-workspace' : ''}" data-agent="${escapeHtml(agent.id)}"><div class="agent-workspace-heading"><button class="agent-disclosure" data-expand-agent="${escapeHtml(agent.id)}" aria-label="${expanded ? '收起' : '展开'} ${escapeHtml(agent.label)} 的会话" aria-expanded="${expanded}" aria-controls="sessions-${escapeHtml(agent.id)}">${expanded ? '⌄' : '›'}</button><button class="conversation agent-entry" data-open-agent="${escapeHtml(agent.id)}" ${recent ? `data-room="${escapeHtml(recent.id)}"` : ''}>${avatar(agent)}<div class="conversation-info"><div class="conversation-top"><strong>${pinned ? '<span class="pin-mark">⌃ </span>' : ''}${escapeHtml(agent.label)}</strong>${all.some(c => state.unread.has(c.id)) ? '<i class="unread"></i>' : ''}</div><p class="conversation-preview">${harnessBadge(agent)}<span>${all.length} 个会话</span></p></div></button><button class="agent-add-session" data-new-session="${escapeHtml(agent.id)}" aria-label="与 ${escapeHtml(agent.label)} 新建会话" title="新建会话">＋</button></div><div class="agent-sessions" id="sessions-${escapeHtml(agent.id)}" ${expanded ? '' : 'hidden'}>${sessions.map(c => `<div class="session-item"><button class="session-link ${c.id === state.current ? 'active' : ''}" data-session="${escapeHtml(c.id)}" aria-current="${c.id === state.current}" title="${escapeHtml(c.title)}"><span class="session-symbol">${c.pinned ? '⌃' : '◦'}</span><span class="session-title">${escapeHtml(c.title)}</span>${state.unread.has(c.id) ? '<i class="unread"></i>' : ''}</button><button class="session-more" data-session-menu="${escapeHtml(c.id)}" aria-label="管理会话 ${escapeHtml(c.title)}">⋯</button></div>`).join('') || '<p class="empty-sessions">还没有会话</p>'}<button class="new-session-link" data-new-session="${escapeHtml(agent.id)}">＋ 新建会话</button></div></section>`;
+    }
+    return `<button class="conversation ${row.id === state.current ? 'active' : ''}" data-room="${row.id}" aria-current="${row.id === state.current}">${avatar(state.agents.find(a => a.id === row.agentIds[0]), row.kind === 'group')}<div class="conversation-info"><div class="conversation-top"><strong>${row.pinned ? '<span class="pin-mark" aria-label="已置顶">⌃ </span>' : ''}${escapeHtml(row.title)}</strong><time>${time(row.updatedAt)}</time>${state.unread.has(row.id) ? '<i class="unread"></i>' : ''}</div><p class="conversation-preview">${row.kind === 'direct' ? harnessBadge(state.agents.find(a => a.id === row.agentIds[0])) : ''}<span>${escapeHtml(row.preview || '开始聊天吧')}</span></p></div></button>`;
+  }).join('') : '<p class="empty-list">' + (query ? '没有找到匹配的会话' : state.filter === 'group' ? '还没有群聊<br>选择几位伙伴，一起聊聊' : '点击搜索框旁的 ＋<br>添加你的第一位 AI 伙伴') + '</p>';
   $('#welcome-add').textContent = state.agents.length ? '＋ 添加 Agent' : '＋ 添加第一个 Agent';
+}
+const creatingSessions = new Set();
+async function newSession(agentId) {
+  if (creatingSessions.has(agentId)) return;
+  creatingSessions.add(agentId);
+  try {
+    const result = await api('/conversations', { agentId });
+    expandAgent(agentId); await refresh(); await openConversation(result.conversation.id); $('#draft').focus();
+  } catch (error) { toast(error.message); }
+  finally { creatingSessions.delete(agentId); }
+}
+function renderConversationChrome() {
+  const row = state.conversations.find(c => c.id === state.current); if (!row) return;
+  const agent = row.kind === 'direct' ? state.agents.find(a => a.id === row.agentIds[0]) : null;
+  const adapter = composerAdapters[agent?.backend];
+  $('#chat-title').textContent = row.title;
+  $('#group-actions').hidden = row.kind !== 'group';
+  $('#session-actions').hidden = !adapter; $('#new-session').hidden = !adapter;
+  const harnesses = [...new Set(row.agentIds.map(id => harnessLabel(state.agents.find(a => a.id === id)?.backend)).filter(Boolean))];
+  $('#chat-subtitle').textContent = row.kind === 'group' ? `${row.agentIds.length} 位 Agent · ${harnesses.join(' / ')}` : `${agent?.label || 'Agent'} · ${harnesses[0] || 'Agent'} · 独立会话`;
+  const composer = $('.composer'); composer.dataset.harness = adapter ? agent.backend : 'generic';
+  $('#conversation-view').dataset.harness = composer.dataset.harness;
+  $('#harness-context').hidden = !adapter; $('#harness-options').hidden = !adapter;
+  $('#draft').placeholder = adapter?.placeholder || '发条消息，聊聊你的想法…';
+  if (!adapter) return;
+  $('#composer-workspace').textContent = '▱ ' + agent.label;
+  $('#composer-workspace').title = agent.workspace || 'Agent 工作区';
+  $('#composer-mode').textContent = adapter.mode;
+  $('#composer-mode').title = agent.backend === 'codex' ? '当前会话使用只读权限' : '当前为 Room 对话模式，执行权限由 DSH 后端校验';
+  $('#composer-model').textContent = agent.modelName || agent.model || '后端默认模型';
+  $('#composer-model').title = '模型随 Agent 固定，可在 Agent 设置查看';
+  $('#composer-effort').textContent = (row.efforts?.[agent.id] || agent.effort || '默认推理') + ' ⌄';
 }
 function attachmentsHtml(items, removable = false) {
   return items.map((file, index) => `<span class="file-chip">${file.isImage ? `<img alt="${escapeHtml(file.name)}" src="/api/attachment/${encodeURIComponent(file.id)}">` : '▤'}${escapeHtml(file.name)}${removable ? `<button data-remove-file="${index}" aria-label="移除 ${escapeHtml(file.name)}">×</button>` : ''}</span>`).join('');
@@ -55,7 +121,12 @@ function renderMessages() {
   }
   for (const [key, cached] of messageNodes) if (!retained.has(key)) { cached.node.remove(); messageNodes.delete(key); }
   updateLiveMessages(panel);
-  if (!panel.children.length) panel.innerHTML = '<div class="empty-chat"><strong>从一句「你好」开始</strong><p>文字、文件、图片，都可以分享。</p></div>';
+  if (!panel.children.length) {
+    const row = state.conversations.find(c => c.id === state.current);
+    const agent = row?.kind === 'direct' ? state.agents.find(a => a.id === row.agentIds[0]) : null;
+    const adapter = composerAdapters[agent?.backend];
+    panel.innerHTML = adapter ? `<div class="empty-chat harness-welcome">${avatar(agent)}<span class="eyebrow">${escapeHtml(harnessLabel(agent.backend))} · ${escapeHtml(agent.label)}</span><strong>${adapter.heading}</strong><p>新的会话，新的思路。<br>继续使用这位 Agent 的工作区与共享记忆。</p></div>` : '<div class="empty-chat"><strong>从一句「你好」开始</strong><p>文字、文件、图片，都可以分享。</p></div>';
+  }
   if (stick) panel.scrollTop = panel.scrollHeight;
   updateActivity();
 }
@@ -130,20 +201,23 @@ function updateActivity() {
   $('#stop').hidden = !ids.size;
 }
 async function openConversation(id) {
+  const row = state.conversations.find(c => c.id === id); if (!row) return;
   hideMentions();
+  closeTools();
   if (state.current) state.drafts[state.current] = $('#draft').value;
   state.current = id; state.snapshot = null; state.unread.delete(id);
   localStorage.setItem('agent-room:selected', id);
   $('#welcome').hidden = true; $('#conversation-view').hidden = false;
-  const row = state.conversations.find((c) => c.id === id);
-  $('#chat-title').textContent = row.title;
-  $('#group-actions').hidden = row.kind !== 'group';
-  const harnesses = [...new Set(row.agentIds.map(id => harnessLabel(state.agents.find(a => a.id === id)?.backend)).filter(Boolean))];
-  $('#chat-subtitle').textContent = row.kind === 'group' ? `${row.agentIds.length} 位 Agent · ${harnesses.join(' / ')}` : `${harnesses[0] || 'Agent'} · 独立对话`;
+  if (row.kind === 'direct' && supportsSessions(state.agents.find(a => a.id === row.agentIds[0]))) {
+    expandAgent(row.agentIds[0]); lastAgentSessions[row.agentIds[0]] = id;
+    localStorage.setItem('agent-room:last-agent-sessions', JSON.stringify(lastAgentSessions));
+  }
+  renderConversationChrome();
   $('#draft').value = state.drafts[id] || '';
   $('#messages').innerHTML = '<div class="empty-chat">正在读取聊天记录…</div>';
   renderList(); renderAttachments(); updateActivity();
   try {
+    await persistNavigation().catch(error => toast('界面状态未保存：' + error.message));
     const result = await api('/conversation?id=' + encodeURIComponent(id));
     if (state.current !== id) return;
     state.snapshot = result.snapshot;
@@ -346,9 +420,38 @@ function renameConversation(row, agent) {
     $('#modal').close(); toast('名称已修改');
   }, '保存名称');
 }
+function renameSession(row) {
+  showModal('重命名会话', '<label class="field">会话名称<input name="title" required maxlength="60" value="' + escapeHtml(row.title) + '"></label><p class="hint">只修改此会话的标题，Agent 名称和工作区保持不变。</p>', async form => {
+    await api('/conversation/title', { id: row.id, title: new FormData(form).get('title') });
+    await refresh(); $('#modal').close(); toast('会话已重命名');
+  }, '保存名称');
+}
+function showSessionMenu(row, x, y) {
+  closeAgentMenu();
+  const menu = document.createElement('div'); menu.id = 'agent-context-menu'; menu.setAttribute('role', 'menu');
+  menu.innerHTML = '<button role="menuitem" data-action="rename">重命名会话</button><button role="menuitem" data-action="pin">' + (row.pinned ? '取消置顶会话' : '置顶会话') + '</button><button role="menuitem" data-action="new">新建会话</button>';
+  document.body.append(menu);
+  menu.style.left = Math.max(0, Math.min(x, innerWidth - menu.offsetWidth - 8)) + 'px';
+  menu.style.top = Math.max(0, Math.min(y, innerHeight - menu.offsetHeight - 8)) + 'px';
+  menu.onclick = async event => {
+    const action = event.target.closest('[data-action]')?.dataset.action; if (!action) return;
+    closeAgentMenu();
+    if (action === 'rename') return renameSession(row);
+    if (action === 'new') return void newSession(row.agentIds[0]);
+    try { await api('/conversation/pin', { id: row.id, pinned: !row.pinned }); await refresh(); } catch (error) { toast(error.message); }
+  };
+  menu.onkeydown = event => {
+    if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+    event.preventDefault(); const buttons = [...menu.querySelectorAll('button')];
+    buttons[(buttons.indexOf(document.activeElement) + (event.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length].focus();
+  };
+  menu.querySelector('button').focus();
+}
 function closeAgentMenu() { $('#agent-context-menu')?.remove(); }
 $('#conversations').addEventListener('contextmenu', event => {
   closeAgentMenu();
+  const session = event.target.closest('[data-session]');
+  if (session) { event.preventDefault(); showSessionMenu(state.conversations.find(c => c.id === session.dataset.session), event.clientX, event.clientY); return; }
   const button = event.target.closest('[data-room]');
   const row = state.conversations.find(c => c.id === button?.dataset.room);
   if (!row) return;
@@ -364,7 +467,9 @@ function showConversationMenu(row, x, y) {
   closeAgentMenu();
   const agent = row.kind === 'direct' ? state.agents.find(a => a.id === row.agentIds[0]) : null; if (row.kind === 'direct' && !agent) return;
   const menu = document.createElement('div'); menu.id = 'agent-context-menu'; menu.setAttribute('role', 'menu');
-  menu.innerHTML = '<button role="menuitem" data-action="pin">' + (row.pinned ? '取消置顶' : '置顶') + '</button><button role="menuitem" data-action="delete">删除</button>';
+  const pinned = supportsSessions(agent) ? agentPinned(agent) : row.pinned;
+  menu.innerHTML = '<button role="menuitem" data-action="pin">' + (pinned ? '取消置顶' : '置顶') + '</button><button role="menuitem" data-action="delete">删除</button>';
+  if (supportsSessions(agent)) menu.insertAdjacentHTML('afterbegin', '<button role="menuitem" data-action="new">新建会话</button><button role="menuitem" data-action="settings">Agent 设置</button>');
   if (row.kind === 'group') menu.querySelector('[data-action="delete"]').textContent = '删除群聊';
   menu.insertAdjacentHTML('afterbegin', '<button role="menuitem" data-action="rename">重命名</button>');
   document.body.append(menu);
@@ -374,8 +479,10 @@ function showConversationMenu(row, x, y) {
     const action = e.target.closest('[data-action]')?.dataset.action; if (!action) return;
     closeAgentMenu();
     if (action === 'rename') { renameConversation(row, agent); return; }
+    if (action === 'new') return void newSession(agent.id);
+    if (action === 'settings') return void memberEffort(agent.id, row.id);
     if (action === 'delete') { if (row.kind === 'group') deleteGroup(row); else deleteAgent(agent); return; }
-    try { await api('/conversation/pin', { id: row.id, pinned: !row.pinned }); await refresh(); } catch(e) { toast(e.message); }
+    try { await api(supportsSessions(agent) ? '/agents/pin' : '/conversation/pin', { id: supportsSessions(agent) ? agent.id : row.id, pinned: !pinned }); await refresh(); } catch(e) { toast(e.message); }
   };
   menu.addEventListener('keydown', e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const buttons = [...menu.querySelectorAll('button')]; buttons[(buttons.indexOf(document.activeElement) + 1) % buttons.length].focus(); } });
   menu.querySelector('button').focus();
@@ -499,13 +606,35 @@ function restoreDraft(id, text, files) {
   state.uploads[id] = [...files, ...(state.uploads[id] || [])];
   if (state.current === id) { $('#draft').value = state.drafts[id]; renderAttachments(); }
 }
-async function refresh() { const data = await api('/catalog'); Object.assign(state, { agents: data.agents, conversations: data.conversations, harnesses: data.harnesses, canChooseWorkspace: data.canChooseWorkspace, workspaceRoot: data.workspaceRoot, discoveryChoice: data.discoveryChoice }); renderList(); if (data.discoveryChoice === null && !discoveryPromptShown) discoveryPrompt(); }
+async function refresh() { const data = await api('/catalog'); Object.assign(state, { agents: data.agents, conversations: data.conversations, harnesses: data.harnesses, canChooseWorkspace: data.canChooseWorkspace, workspaceRoot: data.workspaceRoot, discoveryChoice: data.discoveryChoice }); renderList(); renderConversationChrome(); if (data.discoveryChoice === null && !discoveryPromptShown) discoveryPrompt(); }
 $('#add-agent').onclick = $('#welcome-add').onclick = addAgent;
 $('#new-group').onclick = createGroup; $('#settings').onclick = settings;
 $('#backends').onclick = () => { void backendSettings(); };
 $('#search').oninput = renderList;
-document.querySelectorAll('[data-filter]').forEach((button) => { button.onclick = () => { state.filter = button.dataset.filter; document.querySelectorAll('[data-filter]').forEach((b) => b.classList.toggle('selected', b === button)); renderList(); }; });
-$('#conversations').onclick = (event) => { const button = event.target.closest('[data-room]'); if (button) void openConversation(button.dataset.room); };
+document.querySelectorAll('[data-filter]').forEach(button => { button.onclick = () => {
+  state.filter = button.dataset.filter;
+  document.querySelectorAll('[data-filter]').forEach(b => { const selected = b.dataset.filter === state.filter; b.classList.toggle('selected', selected); b.setAttribute('aria-pressed', String(selected)); });
+  $('#list-view-label').textContent = ({ all: '聊天', direct: 'Agents', group: '群聊' })[state.filter];
+  renderList();
+}; });
+$('#conversations').onclick = event => {
+  const newButton = event.target.closest('[data-new-session]'); if (newButton) return void newSession(newButton.dataset.newSession);
+  const disclosure = event.target.closest('[data-expand-agent]');
+  if (disclosure) { const id = disclosure.dataset.expandAgent; expandAgent(id, disclosure.getAttribute('aria-expanded') !== 'true'); renderList(); $(`[data-expand-agent="${CSS.escape(id)}"]`)?.focus(); void persistNavigation().catch(e => toast('界面状态未保存：' + e.message)); return; }
+  const more = event.target.closest('[data-session-menu]');
+  if (more) { const rect = more.getBoundingClientRect(); showSessionMenu(state.conversations.find(c => c.id === more.dataset.sessionMenu), rect.right, rect.bottom); return; }
+  const session = event.target.closest('[data-session]'); if (session) return void openConversation(session.dataset.session);
+  const agent = event.target.closest('[data-open-agent]');
+  if (agent) {
+    const id = agent.dataset.openAgent; expandAgent(id);
+    const sessions = agentSessions(id); const row = sessions.find(c => c.id === lastAgentSessions[id]) || sessions[0];
+    if (row) void openConversation(row.id); else void newSession(id); return;
+  }
+  const button = event.target.closest('[data-room]'); if (button) void openConversation(button.dataset.room);
+};
+$('#new-session').onclick = () => { const row = state.conversations.find(c => c.id === state.current); if (row) void newSession(row.agentIds[0]); };
+$('#session-actions').onclick = () => { const row = state.conversations.find(c => c.id === state.current), rect = $('#session-actions').getBoundingClientRect(); if (row) showSessionMenu(row, rect.left, rect.bottom); };
+$('#composer-workspace').onclick = $('#composer-model').onclick = $('#composer-effort').onclick = () => showMembers();
 $('#close-modal').onclick = $('#cancel-modal').onclick = () => $('#modal').close();
 $('#modal').addEventListener('close', () => { $('#modal-content').onclick = null; $('#modal-content').onchange = null; });
 $('#modal-form').onsubmit = async (event) => { event.preventDefault(); if (!onSubmit) return; $('#modal-submit').disabled = true; try { await onSubmit(event.target); } catch (error) { $('#modal-error').textContent = error.message; } finally { $('#modal-submit').disabled = false; } };
@@ -555,7 +684,16 @@ events.onmessage = (message) => {
     if (data.room === state.current) scheduleMessages();
   }
 };
-(async () => { try { const location = await api('/data-location'); if (location.warning) toast(location.warning); await refresh(); applyTheme((await api('/theme')).theme); const id = localStorage.getItem('agent-room:selected'); if (state.conversations.some((row) => row.id === id)) await openConversation(id); } catch (error) { toast(error.message); } })();
+(async () => { try {
+  const location = await api('/data-location'); if (location.warning) toast(location.warning);
+  const navigation = await api('/ui-state');
+  for (const key of Object.keys(expandedAgents)) delete expandedAgents[key];
+  for (const key of Object.keys(lastAgentSessions)) delete lastAgentSessions[key];
+  Object.assign(expandedAgents, navigation.expanded); Object.assign(lastAgentSessions, navigation.lastSessions);
+  await refresh(); applyTheme((await api('/theme')).theme);
+  const id = navigation.selected || localStorage.getItem('agent-room:selected');
+  if (state.conversations.some(row => row.id === id)) await openConversation(id);
+} catch (error) { toast(error.message); } })();
 
 
 async function showAlarms() {

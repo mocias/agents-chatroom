@@ -1,4 +1,4 @@
-# Agent Room profile layer.
+# agentschat profile layer. Keep the legacy plugin ID and route for compatibility.
 #
 # The row `name` below MUST stay byte-identical to this package's package.json
 # `name` (including any scope). The host compares the row specifier with the

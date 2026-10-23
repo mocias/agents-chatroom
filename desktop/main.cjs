@@ -6,9 +6,9 @@ const { randomBytes } = require('node:crypto');
 const { createApplication } = require('../standalone/server.cjs');
 const { createDataLocation } = require('../standalone/data-location.cjs');
 
-app.setName('Agent Room');
+app.setName('agentschat');
 app.setAppUserModelId('com.mocias.agentroom');
-// Stable across development, installation paths and upgrades. Tests may isolate it.
+// Keep the legacy data location and app ID across the agentschat rename. Tests may isolate it.
 app.setPath('userData', process.env.AGENT_ROOM_DESKTOP_HOME
   ? path.resolve(process.env.AGENT_ROOM_DESKTOP_HOME)
   : path.join(app.getPath('appData'), 'Agent Room'));
@@ -35,7 +35,7 @@ function secureWindow(win, isMain) {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^codex:\/\/threads\/[0-9a-f-]{36}$/i.test(url)) { void shell.openExternal(url); return { action: 'deny' }; }
     if (attachmentUrl(url)) {
-      const preview = new BrowserWindow({ width: 900, height: 700, title: '附件预览 · Agent Room', icon, parent: window, webPreferences: preferences });
+      const preview = new BrowserWindow({ width: 900, height: 700, title: '附件预览 · agentschat', icon, parent: window, webPreferences: preferences });
       preview.setMenu(null);
       secureWindow(preview, false);
       void preview.loadURL(url);
@@ -45,9 +45,9 @@ function secureWindow(win, isMain) {
 }
 function makeMenu(dataDir) {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'Agent Room', submenu: [
+    { label: 'agentschat', submenu: [
       { label: '打开数据文件夹', click: () => { void shell.openPath(dataDir); } },
-      { label: '关于 Agent Room', click: () => { void dialog.showMessageBox(window, { type: 'info', title: '关于 Agent Room', message: `Agent Room ${app.getVersion()}`, detail: '本地多 Agent 聊天应用\n支持 Codex / DSH / Qoder / Claude Code / WorkBuddy 国内与国际版\n\n聊天数据保存在本机。' }); } },
+      { label: '关于 agentschat', click: () => { void dialog.showMessageBox(window, { type: 'info', title: '关于 agentschat', message: `agentschat ${app.getVersion()}`, detail: '本地多 Agent 聊天应用\n支持 Codex / DSH / Qoder / Claude Code / WorkBuddy 国内与国际版\n\n聊天数据保存在本机。' }); } },
       { type: 'separator' }, { label: '退出', role: 'quit' },
     ] },
     { label: '编辑', submenu: [{ label: '撤销', role: 'undo' }, { label: '重做', role: 'redo' }, { type: 'separator' }, { label: '剪切', role: 'cut' }, { label: '复制', role: 'copy' }, { label: '粘贴', role: 'paste' }, { label: '全选', role: 'selectAll' }] },
@@ -81,9 +81,9 @@ async function start() {
   let size = {};
   try { size = JSON.parse(fs.readFileSync(stateFile, 'utf8')); } catch {}
   window = new BrowserWindow({
-    title: 'Agent Room', width: Math.max(820, Math.min(1800, Number(size.width) || 1180)),
+    title: 'agentschat', width: Math.max(820, Math.min(1800, Number(size.width) || 1180)),
     height: Math.max(600, Math.min(1200, Number(size.height) || 800)), minWidth: 740, minHeight: 560,
-    backgroundColor: '#f6f5f2', icon, show: false, webPreferences: preferences,
+    backgroundColor: '#f5f5f5', icon, show: false, autoHideMenuBar: true, webPreferences: preferences,
   });
   secureWindow(window, true);
   window.on('close', () => {
@@ -109,7 +109,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(start).catch(async (error) => {
     // Closing during initial navigation cancels loadURL; it is not a startup failure.
     if (quitting) return;
-    dialog.showErrorBox('Agent Room 启动失败', error.message);
+    dialog.showErrorBox('agentschat 启动失败', error.message);
     app.quit();
   });
   app.on('window-all-closed', () => app.quit());

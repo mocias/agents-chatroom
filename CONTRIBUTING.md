@@ -1,4 +1,4 @@
-# 参与 Agent Room
+# 参与 agentschat
 
 欢迎贡献新的 harness 适配、缺陷修复、界面改进、测试与文档。Contributions and pull requests are welcome. You can open an issue or send a PR without repository write access.
 
